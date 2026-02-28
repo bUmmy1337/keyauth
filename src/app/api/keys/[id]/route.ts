@@ -77,7 +77,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   try {
     const body = await request.json();
-    const { status, resetHwid, maxSessions } = body;
+    const { status, resetHwid, maxSessions, extendDays } = body;
 
     const updateData: Record<string, unknown> = {};
 
@@ -93,6 +93,32 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     if (maxSessions && maxSessions >= 1 && maxSessions <= 10) {
       updateData.maxSessions = maxSessions;
+    }
+
+    // ─── Extend expiry ──────────────────────────────────
+    if (extendDays && typeof extendDays === "number" && extendDays >= 1 && extendDays <= 3650) {
+      const currentKey = await prisma.key.findUnique({
+        where: { id },
+        select: { expiresAt: true, plan: true },
+      });
+
+      if (currentKey && currentKey.plan !== "LIFETIME") {
+        // Extend from current expiresAt (or from now if already expired / null)
+        const base =
+          currentKey.expiresAt && new Date(currentKey.expiresAt) > new Date()
+            ? new Date(currentKey.expiresAt)
+            : new Date();
+        base.setDate(base.getDate() + extendDays);
+        updateData.expiresAt = base;
+
+        // If key was expired, re-activate it
+        if (!status) {
+          const freshKey = await prisma.key.findUnique({ where: { id }, select: { status: true } });
+          if (freshKey?.status === "EXPIRED") {
+            updateData.status = "ACTIVE";
+          }
+        }
+      }
     }
 
     if (Object.keys(updateData).length === 0) {

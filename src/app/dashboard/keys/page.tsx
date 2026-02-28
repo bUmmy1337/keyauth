@@ -79,6 +79,11 @@ export default function KeysPage() {
   const [selectedProject, setSelectedProject] = useState("");
   const [projects, setProjects] = useState<ProjectData[]>([]);
 
+  // Extend key state
+  const [extendKeyId, setExtendKeyId] = useState<string | null>(null);
+  const [extendDays, setExtendDays] = useState("30");
+  const [extendLoading, setExtendLoading] = useState(false);
+
   const fetchKeys = useCallback(
     async (page = 1) => {
       const params = new URLSearchParams({ page: String(page), limit: "20" });
@@ -162,6 +167,35 @@ export default function KeysPage() {
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
     toast("Copied to clipboard", "info");
+  }
+
+  async function handleExtend() {
+    if (!extendKeyId) return;
+    const days = parseInt(extendDays);
+    if (!days || days < 1 || days > 3650) {
+      toast("Enter a valid number of days (1-3650)", "error");
+      return;
+    }
+    setExtendLoading(true);
+
+    const res = await fetch(`/api/keys/${extendKeyId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ extendDays: days }),
+    });
+
+    const data = await res.json();
+    setExtendLoading(false);
+
+    if (data.success) {
+      toast(`Extended by ${days} days`, "success");
+      setExtendKeyId(null);
+      setExtendDays("30");
+      fetchKeys();
+    } else {
+      toast(data.error || "Failed to extend key", "error");
+    }
   }
 
   const statusBadge = (status: string) => {
@@ -285,6 +319,15 @@ export default function KeysPage() {
                   </td>
                   <td>
                     <div className="flex gap-1">
+                      {key.plan !== "LIFETIME" && key.status !== "REVOKED" && (
+                        <button
+                          onClick={() => setExtendKeyId(key.id)}
+                          className="rounded-lg px-2 py-1 text-[10px] font-medium text-blue-400/50 transition-colors hover:bg-blue-400/[0.06] hover:text-blue-400/80"
+                          title="Extend Expiry"
+                        >
+                          Extend
+                        </button>
+                      )}
                       {key.hwidLocked && (
                         <button
                           onClick={() => handleAction(key.id, "reset")}
@@ -467,6 +510,52 @@ export default function KeysPage() {
         >
           Copy All Keys
         </GlassButton>
+      </GlassModal>
+
+      {/* Extend Key Modal */}
+      <GlassModal
+        open={!!extendKeyId}
+        onClose={() => { setExtendKeyId(null); setExtendDays("30"); }}
+        title="Extend Key Expiry"
+      >
+        <div className="space-y-5">
+          <p className="text-sm text-white/40">
+            Add additional days to this key&apos;s expiration date. If the key is already expired,
+            the new expiry will be calculated from now.
+          </p>
+          <GlassInput
+            label="Days to Add"
+            type="number"
+            min={1}
+            max={3650}
+            value={extendDays}
+            onChange={(e) => setExtendDays(e.target.value)}
+            placeholder="30"
+          />
+          <div className="flex flex-wrap gap-2">
+            {[1, 7, 30, 90, 365].map((d) => (
+              <button
+                key={d}
+                onClick={() => setExtendDays(String(d))}
+                className={`rounded-lg px-3 py-1.5 text-[10px] font-medium transition-colors border ${
+                  extendDays === String(d)
+                    ? "bg-blue-400/10 text-blue-400/70 border-blue-400/20"
+                    : "text-white/30 border-white/[0.06] hover:bg-white/[0.04] hover:text-white/50"
+                }`}
+              >
+                {d === 1 ? "1 Day" : d === 7 ? "1 Week" : d === 30 ? "1 Month" : d === 90 ? "3 Months" : "1 Year"}
+              </button>
+            ))}
+          </div>
+          <GlassButton
+            variant="primary"
+            className="w-full justify-center"
+            onClick={handleExtend}
+            loading={extendLoading}
+          >
+            Extend Expiry
+          </GlassButton>
+        </div>
       </GlassModal>
     </div>
   );
