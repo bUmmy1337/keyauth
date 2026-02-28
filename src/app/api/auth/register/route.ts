@@ -26,16 +26,12 @@ export async function POST(request: NextRequest) {
     const userCount = await prisma.user.count();
     const isSetup = userCount === 0;
 
-    // After first user exists, only ADMINs can register new users
+    // Check if caller is admin (optional — used for role assignment)
     let callerRole: string | null = null;
     if (!isSetup) {
       const caller = await getAuthUser(request);
-      if (!caller) {
-        return error("Unauthorized. Admin token required to register users.", 401);
-      }
-      callerRole = caller.role as string;
-      if (callerRole !== "ADMIN") {
-        return error("Only admins can register new users.", 403);
+      if (caller) {
+        callerRole = caller.role as string;
       }
     }
 
@@ -60,8 +56,12 @@ export async function POST(request: NextRequest) {
       return error("A user with this email already exists.", 409);
     }
 
-    // First user is always ADMIN; subsequent users can be ADMIN or VIEWER
-    const assignedRole = isSetup ? "ADMIN" : (role === "VIEWER" ? "VIEWER" : "ADMIN");
+    // First user is always ADMIN; ADMINs can assign roles; self-registration gets VIEWER
+    const assignedRole = isSetup
+      ? "ADMIN"
+      : callerRole === "ADMIN"
+        ? (role === "ADMIN" ? "ADMIN" : "VIEWER")
+        : "VIEWER";
 
     const bcrypt = await import("bcryptjs");
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -94,8 +94,8 @@ export async function POST(request: NextRequest) {
       201
     );
 
-    // Set cookie only during initial setup (self-registration)
-    if (isSetup) {
+    // Set cookie for self-registration (setup or public)
+    if (!callerRole) {
       response.headers.set(
         "Set-Cookie",
         `auth_token=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400`
