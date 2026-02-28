@@ -20,7 +20,7 @@ import { useApi } from "@/hooks/use-api";
 interface KeyData {
   id: string;
   mask: string;
-  plan: "DAILY" | "WEEKLY" | "LIFETIME";
+  plan: "DAILY" | "WEEKLY" | "MONTHLY" | "LIFETIME" | "CUSTOM";
   status: "ACTIVE" | "EXPIRED" | "BANNED" | "REVOKED";
   hwidLocked: boolean;
   maxSessions: number;
@@ -64,6 +64,8 @@ export default function KeysPage() {
   const [plan, setPlan] = useState("DAILY");
   const [count, setCount] = useState("1");
   const [maxSessions, setMaxSessions] = useState("1");
+  const [customDays, setCustomDays] = useState("30");
+  const [note, setNote] = useState("");
   const [filter, setFilter] = useState("");
 
   const fetchKeys = useCallback(
@@ -94,6 +96,8 @@ export default function KeysPage() {
       plan,
       count: parseInt(count),
       maxSessions: parseInt(maxSessions),
+      ...(plan === "CUSTOM" ? { customDays: parseInt(customDays) } : {}),
+      ...(note.trim() ? { note: note.trim() } : {}),
     });
 
     if (res.success && res.data) {
@@ -144,7 +148,7 @@ export default function KeysPage() {
   };
 
   const planBadge = (p: string) => {
-    const variant = p.toLowerCase() as "daily" | "weekly" | "lifetime";
+    const variant = p.toLowerCase() as "daily" | "weekly" | "monthly" | "lifetime" | "custom";
     return <GlassBadge variant={variant}>{p}</GlassBadge>;
   };
 
@@ -328,9 +332,22 @@ export default function KeysPage() {
             options={[
               { value: "DAILY", label: "Daily (24 Hours)" },
               { value: "WEEKLY", label: "Weekly (7 Days)" },
+              { value: "MONTHLY", label: "Monthly (30 Days)" },
               { value: "LIFETIME", label: "Lifetime" },
+              { value: "CUSTOM", label: "Custom Duration" },
             ]}
           />
+          {plan === "CUSTOM" && (
+            <GlassInput
+              label="Custom Duration (Days)"
+              type="number"
+              min={1}
+              max={3650}
+              value={customDays}
+              onChange={(e) => setCustomDays(e.target.value)}
+              placeholder="e.g. 90"
+            />
+          )}
           <GlassInput
             label="Number of Keys"
             type="number"
@@ -346,6 +363,12 @@ export default function KeysPage() {
             max={10}
             value={maxSessions}
             onChange={(e) => setMaxSessions(e.target.value)}
+          />
+          <GlassInput
+            label="Note (optional)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="VIP client, team license, etc."
           />
           <GlassButton
             variant="primary"

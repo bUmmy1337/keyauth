@@ -78,10 +78,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { plan, maxSessions = 1, count = 1 } = body;
+    const { plan, maxSessions = 1, count = 1, customDays, note } = body;
 
     if (!plan || !isPlanValid(plan)) {
-      return error("Invalid plan. Must be DAILY, WEEKLY, or LIFETIME.", 400);
+      return error("Invalid plan. Must be DAILY, WEEKLY, MONTHLY, LIFETIME, or CUSTOM.", 400);
+    }
+
+    if (plan === "CUSTOM" && (!customDays || customDays < 1 || customDays > 3650)) {
+      return error("Custom plan requires customDays between 1 and 3650.", 400);
     }
 
     if (count < 1 || count > 50) {
@@ -104,7 +108,9 @@ export async function POST(request: NextRequest) {
           maxSessions,
           serverVar: await encrypt(serverVar),
           serverNonce,
-          expiresAt: getExpiryDate(plan),
+          customDays: plan === "CUSTOM" ? customDays : null,
+          note: note || null,
+          expiresAt: getExpiryDate(plan, customDays),
           createdById: user.sub,
         },
       });

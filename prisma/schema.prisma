@@ -10,7 +10,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_DATABASE_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
 // ─────────────────────────────────────────────────────────
@@ -45,8 +45,12 @@ model Key {
   activeSessions Int    @default(0)
 
   // Server-side variables (anti memory-patch)
+  // Server-side variables (anti memory-patch)
   serverVar   String?   // Encrypted variable sent only on valid auth
   serverNonce String?   // One-time nonce rotated per validation
+
+  customDays  Int?      // Custom expiry duration in days (for CUSTOM plan)
+  note        String?   // Admin note / label for the key
 
   expiresAt DateTime?
   createdAt DateTime  @default(now())
@@ -111,7 +115,9 @@ enum Role {
 enum Plan {
   DAILY
   WEEKLY
+  MONTHLY
   LIFETIME
+  CUSTOM
 }
 
 enum KeyStatus {

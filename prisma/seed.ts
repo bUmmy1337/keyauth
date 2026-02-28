@@ -12,11 +12,11 @@ async function main() {
   console.log("🌱 Seeding database...");
 
   // Create admin user
-  const password = await bcrypt.hash("admin123", 12);
+  const password = await bcrypt.hash("WzG9kkiQebJu7JF", 12);
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@keyvault.io" },
-    update: {},
+    update: { password },
     create: {
       email: "admin@keyvault.io",
       password,
@@ -24,7 +24,7 @@ async function main() {
     },
   });
 
-  console.log(`✓ Admin user: ${admin.email} (password: admin123)`);
+  console.log(`✓ Admin user: ${admin.email} (password updated)`);
   console.log("✓ Seeding complete.");
 }
 
