@@ -17,14 +17,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"login" | "register">("login");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
+    const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -34,17 +37,31 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (!data.success) {
-        setError(data.error || "Authentication failed.");
+        setError(data.error || (mode === "login" ? "Authentication failed." : "Registration failed."));
         setLoading(false);
         return;
       }
 
-      router.push("/dashboard");
+      if (mode === "register") {
+        // After successful registration, switch to login
+        setMode("login");
+        setError("");
+        setPassword("");
+        // Show a success hint — reuse error field with a trick or just redirect
+        router.push("/dashboard");
+      } else {
+        router.push("/dashboard");
+      }
     } catch {
       setError("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function switchMode() {
+    setMode(mode === "login" ? "register" : "login");
+    setError("");
   }
 
   return (
@@ -79,7 +96,7 @@ export default function LoginPage() {
             KeyVault
           </h1>
           <p className="mt-2 text-sm text-white/30">
-            Sign in to your dashboard
+            {mode === "login" ? "Sign in to your dashboard" : "Create a new account"}
           </p>
         </div>
 
@@ -121,9 +138,21 @@ export default function LoginPage() {
             loading={loading}
             className="w-full justify-center"
           >
-            Sign In
+            {mode === "login" ? "Sign In" : "Register"}
           </GlassButton>
         </form>
+
+        {/* Switch mode */}
+        <div className="mt-5 text-center">
+          <button
+            onClick={switchMode}
+            className="text-xs text-white/30 transition-colors hover:text-white/50"
+          >
+            {mode === "login"
+              ? "Don't have an account? Register"
+              : "Already have an account? Sign In"}
+          </button>
+        </div>
 
         {/* Back to home */}
         <div className="mt-6 text-center">
