@@ -1,10 +1,11 @@
 // ─────────────────────────────────────────────────────────
-// GET /api/logs — Audit log listing with filtering
+// GET /api/logs — Audit log listing (user-scoped)
+// ADMIN sees all logs, VIEWER sees only own
 // ─────────────────────────────────────────────────────────
 
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, type AuthPayload } from "@/lib/auth";
 import { success, error } from "@/lib/api-response";
 
 export async function GET(request: NextRequest) {
@@ -14,8 +15,9 @@ export async function GET(request: NextRequest) {
 
   if (!token) return error("Unauthorized.", 401);
 
+  let user: AuthPayload;
   try {
-    await verifyToken(token);
+    user = await verifyToken(token);
   } catch {
     return error("Invalid token.", 401);
   }
@@ -29,6 +31,11 @@ export async function GET(request: NextRequest) {
   const where: Record<string, unknown> = {};
   if (action) where.action = { startsWith: action };
   if (keyId) where.keyId = keyId;
+
+  // VIEWER sees only own logs
+  if (user.role !== "ADMIN") {
+    where.userId = user.sub;
+  }
 
   const [logs, total] = await Promise.all([
     prisma.log.findMany({

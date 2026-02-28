@@ -1,22 +1,46 @@
 // ─────────────────────────────────────────────────────────
-// POST /api/auth/register — Create first admin (setup only)
+// POST /api/auth/register — Register a new user
+// • First user: auto-created as ADMIN (setup mode)
+// • Subsequent users: requires ADMIN auth token
 // ─────────────────────────────────────────────────────────
 
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { signToken } from "@/lib/auth";
+import { signToken, verifyToken } from "@/lib/auth";
 import { success, error } from "@/lib/api-response";
+
+async function getAuthUser(request: NextRequest) {
+  const token =
+    request.cookies.get("auth_token")?.value ||
+    request.headers.get("authorization")?.replace("Bearer ", "");
+  if (!token) return null;
+  try {
+    return await verifyToken(token);
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
-    // Only allow registration if no users exist (initial setup)
     const userCount = await prisma.user.count();
-    if (userCount > 0) {
-      return error("Registration is disabled. Contact admin.", 403);
+    const isSetup = userCount === 0;
+
+    // After first user exists, only ADMINs can register new users
+    let callerRole: string | null = null;
+    if (!isSetup) {
+      const caller = await getAuthUser(request);
+      if (!caller) {
+        return error("Unauthorized. Admin token required to register users.", 401);
+      }
+      callerRole = caller.role as string;
+      if (callerRole !== "ADMIN") {
+        return error("Only admins can register new users.", 403);
+      }
     }
 
     const body = await request.json();
-    const { email, password } = body;
+    const { email, password, role } = body;
 
     if (!email || !password) {
       return error("Email and password are required.", 400);
@@ -31,6 +55,14 @@ export async function POST(request: NextRequest) {
       return error("Invalid email format.", 400);
     }
 
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return error("A user with this email already exists.", 409);
+    }
+
+    // First user is always ADMIN; subsequent users can be ADMIN or VIEWER
+    const assignedRole = isSetup ? "ADMIN" : (role === "VIEWER" ? "VIEWER" : "ADMIN");
+
     const bcrypt = await import("bcryptjs");
     const hashedPassword = await bcrypt.hash(password, 12);
 
@@ -38,7 +70,7 @@ export async function POST(request: NextRequest) {
       data: {
         email,
         password: hashedPassword,
-        role: "ADMIN",
+        role: assignedRole,
       },
     });
 
@@ -50,8 +82,9 @@ export async function POST(request: NextRequest) {
 
     await prisma.log.create({
       data: {
-        action: "admin_registered",
+        action: isSetup ? "admin_registered" : "user_created",
         userId: user.id,
+        payload: isSetup ? undefined : JSON.stringify({ by: callerRole, role: assignedRole }),
         success: true,
       },
     });
@@ -61,10 +94,13 @@ export async function POST(request: NextRequest) {
       201
     );
 
-    response.headers.set(
-      "Set-Cookie",
-      `auth_token=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400`
-    );
+    // Set cookie only during initial setup (self-registration)
+    if (isSetup) {
+      response.headers.set(
+        "Set-Cookie",
+        `auth_token=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400`
+      );
+    }
 
     return response;
   } catch (err) {

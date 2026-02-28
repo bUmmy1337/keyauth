@@ -4,9 +4,10 @@
 // Sidebar — Dashboard navigation with liquid glass
 // ─────────────────────────────────────────────────────────
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const navItems = [
   {
@@ -18,6 +19,15 @@ const navItems = [
         <rect x="14" y="3" width="7" height="7" rx="2" />
         <rect x="3" y="14" width="7" height="7" rx="2" />
         <rect x="14" y="14" width="7" height="7" rx="2" />
+      </svg>
+    ),
+  },
+  {
+    label: "Projects",
+    href: "/dashboard/projects",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
       </svg>
     ),
   },
@@ -67,8 +77,32 @@ const navItems = [
   },
 ];
 
+const adminItem = {
+  label: "Admin Panel",
+  href: "/dashboard/admin",
+  icon: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  ),
+};
+
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<{ email: string; role: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setUser(d.data); })
+      .catch(() => {});
+  }, []);
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    router.push("/login");
+  }
 
   return (
     <motion.aside
@@ -96,7 +130,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item) => {
+        {[...navItems, ...(user?.role === "ADMIN" ? [adminItem] : [])].map((item) => {
           const isActive =
             item.href === "/dashboard"
               ? pathname === "/dashboard"
@@ -126,16 +160,31 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom */}
+      {/* Bottom — User info */}
       <div className="border-t border-white/[0.04] px-4 py-4">
         <div className="glass-sm flex items-center gap-3 px-4 py-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-xs font-semibold text-white/50">
-            A
+            {user?.email?.charAt(0).toUpperCase() || "?"}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="truncate text-xs font-medium text-white/60">Admin</p>
-            <p className="truncate text-[10px] text-white/25">admin@keyvault.io</p>
+            <p className="truncate text-xs font-medium text-white/60">
+              {user?.role || "User"}
+            </p>
+            <p className="truncate text-[10px] text-white/25">
+              {user?.email || "Loading..."}
+            </p>
           </div>
+          <button
+            onClick={handleLogout}
+            title="Sign out"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-white/20 transition-colors hover:bg-white/[0.06] hover:text-white/50"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
         </div>
       </div>
     </motion.aside>

@@ -24,10 +24,32 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  keys Key[]
-  logs Log[]
+  keys     Key[]
+  logs     Log[]
+  projects Project[]
 
   @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────
+// Projects — Isolate keys by project, each with own secret
+// ─────────────────────────────────────────────────────────
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  secret      String   @unique // API secret for validation
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId String
+
+  keys Key[]
+
+  @@index([ownerId])
+  @@index([secret])
+  @@map("projects")
 }
 
 // ─────────────────────────────────────────────────────────
@@ -45,7 +67,6 @@ model Key {
   activeSessions Int    @default(0)
 
   // Server-side variables (anti memory-patch)
-  // Server-side variables (anti memory-patch)
   serverVar   String?   // Encrypted variable sent only on valid auth
   serverNonce String?   // One-time nonce rotated per validation
 
@@ -59,11 +80,15 @@ model Key {
   createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
   createdById String
 
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String?
+
   logs Log[]
 
   @@index([key])
   @@index([hwid])
   @@index([status, expiresAt])
+  @@index([projectId])
   @@map("keys")
 }
 

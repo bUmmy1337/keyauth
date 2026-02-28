@@ -22,7 +22,7 @@ async function getAuthUser(request: NextRequest) {
   }
 }
 
-// ─── GET: List all keys ─────────────────────────────────
+// ─── GET: List keys (scoped to user + project) ──────────
 export async function GET(request: NextRequest) {
   const user = await getAuthUser(request);
   if (!user) return error("Unauthorized.", 401);
@@ -32,10 +32,17 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20")));
   const status = searchParams.get("status") || undefined;
   const plan = searchParams.get("plan") || undefined;
+  const projectId = searchParams.get("projectId") || undefined;
 
   const where: Record<string, unknown> = {};
   if (status) where.status = status;
   if (plan) where.plan = plan;
+  if (projectId) where.projectId = projectId;
+
+  // VIEWER sees only own keys, ADMIN sees all
+  if (user.role !== "ADMIN") {
+    where.createdById = user.sub;
+  }
 
   const [keys, total] = await Promise.all([
     prisma.key.findMany({
@@ -51,8 +58,11 @@ export async function GET(request: NextRequest) {
         hwidLocked: true,
         maxSessions: true,
         activeSessions: true,
+        note: true,
         expiresAt: true,
         createdAt: true,
+        projectId: true,
+        project: { select: { name: true } },
         createdBy: { select: { email: true } },
         _count: { select: { logs: true } },
       },
@@ -78,7 +88,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { plan, maxSessions = 1, count = 1, customDays, note } = body;
+    const { plan, maxSessions = 1, count = 1, customDays, note, projectId } = body;
 
     if (!plan || !isPlanValid(plan)) {
       return error("Invalid plan. Must be DAILY, WEEKLY, MONTHLY, LIFETIME, or CUSTOM.", 400);
@@ -90,6 +100,18 @@ export async function POST(request: NextRequest) {
 
     if (count < 1 || count > 50) {
       return error("Count must be between 1 and 50.", 400);
+    }
+
+    // Validate project if provided
+    if (projectId) {
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { ownerId: true },
+      });
+      if (!project) return error("Project not found.", 404);
+      if (user.role !== "ADMIN" && project.ownerId !== user.sub) {
+        return error("Project not found.", 404);
+      }
     }
 
     const keys = [];
@@ -112,6 +134,7 @@ export async function POST(request: NextRequest) {
           note: note || null,
           expiresAt: getExpiryDate(plan, customDays),
           createdById: user.sub,
+          projectId: projectId || null,
         },
       });
 
@@ -120,6 +143,7 @@ export async function POST(request: NextRequest) {
         key: rawKey, // Only returned on creation, never again
         mask: key.mask,
         plan: key.plan,
+        note: key.note,
         expiresAt: key.expiresAt,
       });
     }
@@ -128,7 +152,7 @@ export async function POST(request: NextRequest) {
       data: {
         action: "keys_created",
         userId: user.sub,
-        payload: JSON.stringify({ count, plan }),
+        payload: JSON.stringify({ count, plan, projectId }),
         success: true,
       },
     });

@@ -27,8 +27,16 @@ interface KeyData {
   activeSessions: number;
   expiresAt: string | null;
   createdAt: string;
+  note: string | null;
+  projectId: string | null;
+  project: { name: string } | null;
   createdBy: { email: string };
   _count: { logs: number };
+}
+
+interface ProjectData {
+  id: string;
+  name: string;
 }
 
 interface KeysResponse {
@@ -67,11 +75,15 @@ export default function KeysPage() {
   const [customDays, setCustomDays] = useState("30");
   const [note, setNote] = useState("");
   const [filter, setFilter] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [selectedProject, setSelectedProject] = useState("");
+  const [projects, setProjects] = useState<ProjectData[]>([]);
 
   const fetchKeys = useCallback(
     async (page = 1) => {
       const params = new URLSearchParams({ page: String(page), limit: "20" });
       if (filter) params.set("status", filter);
+      if (projectFilter) params.set("projectId", projectFilter);
 
       const res = await api.get(`/api/keys?${params}`);
       if (res.success && res.data) {
@@ -84,12 +96,21 @@ export default function KeysPage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filter]
+    [filter, projectFilter]
   );
 
   useEffect(() => {
     fetchKeys();
   }, [fetchKeys]);
+
+  useEffect(() => {
+    async function fetchProjects() {
+      const res = await fetch("/api/projects", { credentials: "include" });
+      const data = await res.json();
+      if (data.success) setProjects(data.data.projects);
+    }
+    fetchProjects();
+  }, []);
 
   async function handleCreate() {
     const res = await createApi.post("/api/keys", {
@@ -98,6 +119,7 @@ export default function KeysPage() {
       maxSessions: parseInt(maxSessions),
       ...(plan === "CUSTOM" ? { customDays: parseInt(customDays) } : {}),
       ...(note.trim() ? { note: note.trim() } : {}),
+      ...(selectedProject ? { projectId: selectedProject } : {}),
     });
 
     if (res.success && res.data) {
@@ -183,7 +205,7 @@ export default function KeysPage() {
       </motion.div>
 
       {/* Filters */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {["", "ACTIVE", "EXPIRED", "BANNED", "REVOKED"].map((f) => (
           <button
             key={f}
@@ -197,6 +219,18 @@ export default function KeysPage() {
             {f || "All"}
           </button>
         ))}
+        {projects.length > 0 && (
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            className="ml-auto rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-xs font-medium text-white/50 outline-none transition-all hover:border-white/[0.10] focus:border-white/[0.15] [&>option]:bg-neutral-900"
+          >
+            <option value="">All Projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Keys Table */}
@@ -206,6 +240,7 @@ export default function KeysPage() {
             <thead>
               <tr>
                 <th>Key</th>
+                <th>Project</th>
                 <th>Plan</th>
                 <th>Status</th>
                 <th>HWID</th>
@@ -219,6 +254,11 @@ export default function KeysPage() {
                 <tr key={key.id}>
                   <td>
                     <span className="font-mono text-xs text-white/50">{key.mask}</span>
+                  </td>
+                  <td>
+                    <span className="text-xs text-white/30">
+                      {key.project?.name || "—"}
+                    </span>
                   </td>
                   <td>{planBadge(key.plan)}</td>
                   <td>{statusBadge(key.status)}</td>
@@ -287,7 +327,7 @@ export default function KeysPage() {
               ))}
               {keys.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-sm text-white/20">
+                  <td colSpan={8} className="py-12 text-center text-sm text-white/20">
                     No keys found. Generate your first license key.
                   </td>
                 </tr>
@@ -370,6 +410,17 @@ export default function KeysPage() {
             onChange={(e) => setNote(e.target.value)}
             placeholder="VIP client, team license, etc."
           />
+          {projects.length > 0 && (
+            <GlassSelect
+              label="Project (optional)"
+              value={selectedProject}
+              onChange={(e) => setSelectedProject(e.target.value)}
+              options={[
+                { value: "", label: "No Project" },
+                ...projects.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
+          )}
           <GlassButton
             variant="primary"
             className="w-full justify-center"

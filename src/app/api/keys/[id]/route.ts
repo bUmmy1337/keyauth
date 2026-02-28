@@ -33,6 +33,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     where: { id },
     include: {
       createdBy: { select: { email: true } },
+      project: { select: { id: true, name: true } },
       logs: {
         orderBy: { createdAt: "desc" },
         take: 20,
@@ -50,6 +51,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   if (!key) return error("Key not found.", 404);
 
+  // VIEWER can only see own keys
+  if (user.role !== "ADMIN" && key.createdById !== user.sub) {
+    return error("Key not found.", 404);
+  }
+
   // Never return the actual encrypted key or server variables
   const { key: _encKey, serverVar: _sv, serverNonce: _sn, ...safeKey } = key;
 
@@ -62,6 +68,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (!user) return error("Unauthorized.", 401);
 
   const { id } = await context.params;
+
+  // Verify ownership (VIEWER can only edit own keys)
+  if (user.role !== "ADMIN") {
+    const key = await prisma.key.findUnique({ where: { id }, select: { createdById: true } });
+    if (!key || key.createdById !== user.sub) return error("Key not found.", 404);
+  }
 
   try {
     const body = await request.json();
@@ -111,6 +123,12 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   if (!user) return error("Unauthorized.", 401);
 
   const { id } = await context.params;
+
+  // Verify ownership
+  if (user.role !== "ADMIN") {
+    const key = await prisma.key.findUnique({ where: { id }, select: { createdById: true } });
+    if (!key || key.createdById !== user.sub) return error("Key not found.", 404);
+  }
 
   try {
     await prisma.key.update({

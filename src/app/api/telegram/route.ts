@@ -19,6 +19,7 @@ interface TelegramRequest {
   action: "validate" | "info" | "reset_hwid";
   key: string;
   hwid?: string;               // PC hardware ID (client-generated)
+  secret?: string;             // Project secret (optional, filters by project)
   telegram_id?: string;        // Optional: for audit logging only
   telegram_username?: string;  // Optional: for audit logging only
 }
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: TelegramRequest = await request.json();
-    const { action, key: licenseKey, hwid, telegram_id, telegram_username } = body;
+    const { action, key: licenseKey, hwid, secret: projectSecret, telegram_id, telegram_username } = body;
 
     if (!action || !licenseKey) {
       return error("Missing required fields: action, key", 400);
@@ -60,9 +61,23 @@ export async function POST(request: NextRequest) {
       return error("Too many requests for this key.", 429);
     }
 
+    // ─── Resolve project scope ────────────────────────────
+    let projectId: string | undefined;
+    if (projectSecret) {
+      const project = await prisma.project.findUnique({
+        where: { secret: projectSecret },
+        select: { id: true },
+      });
+      if (!project) return error("Invalid project secret.", 401);
+      projectId = project.id;
+    }
+
     // ─── Find the key ───────────────────────────────────────
+    const keyWhere: Record<string, unknown> = { status: { in: ["ACTIVE", "EXPIRED"] } };
+    if (projectId) keyWhere.projectId = projectId;
+
     const allKeys = await prisma.key.findMany({
-      where: { status: { in: ["ACTIVE", "EXPIRED"] } },
+      where: keyWhere,
       select: {
         id: true,
         key: true,

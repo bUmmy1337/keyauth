@@ -18,7 +18,7 @@ export default function SettingsPage() {
       method: "POST",
       credentials: "include",
     });
-    router.push("/");
+    router.push("/login");
     toast("Logged out", "info");
   }
 

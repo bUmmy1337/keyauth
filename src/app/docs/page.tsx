@@ -179,6 +179,7 @@ function TabSwitcher({
 const tocItems = [
   { id: "overview", label: "Overview" },
   { id: "auth", label: "Authentication" },
+  { id: "projects", label: "Projects" },
   { id: "endpoints", label: "API Endpoints" },
   { id: "validate", label: "License Validation" },
   { id: "telegram", label: "Telegram Bot" },
@@ -209,11 +210,14 @@ def get_hwid():
     except Exception:
         return hashlib.sha256(b"fallback-hwid").hexdigest()
 
+PROJECT_SECRET = "kv_your_project_secret"  # from dashboard
+
 def validate_license(key: str) -> dict:
     """Validate a license key against the KeyVault API."""
     response = requests.post(API_URL, json={
         "key": key,
         "hwid": get_hwid(),
+        "secret": PROJECT_SECRET,  # scopes to your project
     }, timeout=10)
 
     data = response.json()
@@ -221,6 +225,7 @@ def validate_license(key: str) -> dict:
     if data.get("success"):
         print(f"✅ License valid! Plan: {data['data']['plan']}")
         print(f"   Expires: {data['data']['expiresAt'] or 'Never'}")
+        print(f"   Note: {data['data'].get('note', 'N/A')}")
         print(f"   Server Nonce: {data['data']['nonce']}")
         return data["data"]
     else:
@@ -231,7 +236,8 @@ def validate_license(key: str) -> dict:
 result = validate_license("XXXX-XXXX-XXXX-XXXX")
 if result:
     # Continue application execution with server variable
-    server_var = result.get("serverVar")`,
+    server_var = result.get("serverVar")
+    note = result.get("note")`,
 
   nodejs_validate: `const crypto = require("crypto");
 const { execSync } = require("child_process");
@@ -252,11 +258,13 @@ function getHWID() {
   }
 }
 
+const PROJECT_SECRET = "kv_your_project_secret"; // from dashboard
+
 async function validateLicense(key) {
   const res = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key, hwid: getHWID() }),
+    body: JSON.stringify({ key, hwid: getHWID(), secret: PROJECT_SECRET }),
   });
 
   const data = await res.json();
@@ -315,7 +323,7 @@ public class KeyVaultClient
 
     public async Task<JsonElement?> ValidateAsync(string key)
     {
-        var body = JsonSerializer.Serialize(new { key, hwid = GetHWID() });
+        var body = JsonSerializer.Serialize(new { key, hwid = GetHWID(), secret = "kv_your_project_secret" });
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var res = await _http.PostAsync(API_URL, content);
@@ -352,8 +360,10 @@ BOT_TOKEN = "YOUR_BOT_TOKEN"
 logging.basicConfig(level=logging.INFO)
 
 # ─── Helper: call the Telegram API ────────────────────────
+PROJECT_SECRET = "kv_your_project_secret"  # from dashboard
+
 def call_api(action: str, key: str, hwid: str = None, tg_id: str = None, tg_user: str = None):
-    payload = {"action": action, "key": key}
+    payload = {"action": action, "key": key, "secret": PROJECT_SECRET}
     if hwid:
         payload["hwid"] = hwid
     if tg_id:
@@ -461,8 +471,10 @@ const BOT_TOKEN = "YOUR_BOT_TOKEN";
 
 const bot = new Telegraf(BOT_TOKEN);
 
+const PROJECT_SECRET = "kv_your_project_secret"; // from dashboard
+
 async function callAPI(action, key, { hwid, telegramId, username } = {}) {
-  const body = { action, key };
+  const body = { action, key, secret: PROJECT_SECRET };
   if (hwid) body.hwid = hwid;
   if (telegramId) body.telegram_id = String(telegramId);
   if (username) body.telegram_username = username;
@@ -589,14 +601,16 @@ export default function DocsPage() {
             description="KeyVault is a high-security license management system with hardware ID locking, encrypted validation, and full audit logging. It provides a RESTful API for managing and validating license keys."
             delay={0.05}
           >
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
               {[
+                { title: "Project Isolation", desc: "Separate keys by project with unique API secrets" },
                 { title: "HWID Locking", desc: "Bind keys to PC hardware IDs" },
                 { title: "AES-256-GCM", desc: "End-to-end encryption for all payloads" },
                 { title: "Anti-Replay", desc: "Server-side nonce rotation per validation" },
                 { title: "Rate Limiting", desc: "Per-IP and per-key request throttling" },
                 { title: "Audit Logs", desc: "Every action is logged with IP and HWID" },
                 { title: "Telegram Bot", desc: "Native API for Telegram bot integration" },
+                { title: "Admin Panel", desc: "Full admin view of all users, projects, and keys" },
               ].map((f) => (
                 <div key={f.title} className="rounded-2xl border border-white/[0.04] bg-white/[0.015] p-4">
                   <p className="text-xs font-semibold text-white/70">{f.title}</p>
@@ -636,6 +650,31 @@ export default function DocsPage() {
             </div>
           </DocSection>
 
+          {/* ─── Projects ────────────────────────────────── */}
+          <DocSection
+            id="projects"
+            title="Projects"
+            description="Projects let you organize license keys into separate namespaces. Each project gets a unique API secret (kv_...) that clients use during validation to scope keys to a specific project."
+            delay={0.12}
+          >
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/[0.04] bg-white/[0.015] p-5">
+                <h4 className="text-xs font-semibold text-white/60">How It Works</h4>
+                <ol className="mt-2 space-y-2 text-[11px] leading-relaxed text-white/30">
+                  <li><span className="text-white/50 font-medium">1.</span> Create a project in the dashboard — a unique <code className="rounded bg-white/[0.06] px-1 py-0.5 text-white/40">kv_</code> secret is generated automatically</li>
+                  <li><span className="text-white/50 font-medium">2.</span> Assign keys to the project when generating them</li>
+                  <li><span className="text-white/50 font-medium">3.</span> In your client app, include the project&apos;s <code className="rounded bg-white/[0.06] px-1 py-0.5 text-white/40">secret</code> field in validate/heartbeat/telegram requests</li>
+                  <li><span className="text-white/50 font-medium">4.</span> The API will only match keys belonging to that project</li>
+                </ol>
+              </div>
+              <div className="rounded-2xl border border-amber-400/10 bg-amber-400/[0.03] p-4">
+                <p className="text-xs font-medium text-amber-400/60">
+                  💡 The <code className="rounded bg-white/[0.06] px-1.5 py-0.5 text-white/50">secret</code> field is optional. If omitted, validation searches across all keys regardless of project.
+                </p>
+              </div>
+            </div>
+          </DocSection>
+
           {/* ─── API Endpoints ───────────────────────────── */}
           <DocSection
             id="endpoints"
@@ -648,7 +687,7 @@ export default function DocsPage() {
               <Endpoint method="POST" path="/api/auth/register" description="Register a new admin (first-use only)" />
               <Endpoint method="POST" path="/api/auth/logout" description="Clear auth cookie" />
               <Endpoint method="GET" path="/api/auth/me" description="Get current user info" />
-              <Endpoint method="GET" path="/api/keys" description="List all license keys (paginated)" />
+              <Endpoint method="GET" path="/api/keys?projectId=xxx" description="List all license keys (paginated, optional project filter)" />
               <Endpoint
                 method="POST"
                 path="/api/keys"
@@ -658,7 +697,8 @@ export default function DocsPage() {
   "count": 5,             // 1-50 keys at once
   "maxSessions": 1,       // Max concurrent sessions
   "customDays": 90,       // Required if plan is CUSTOM (1-3650)
-  "note": "VIP client"    // Optional admin note
+  "note": "VIP client",   // Optional admin note
+  "projectId": "clxxx..." // Optional project ID
 }`}
               />
               <Endpoint method="GET" path="/api/keys/:id" description="Get key details with recent logs" />
@@ -675,7 +715,30 @@ export default function DocsPage() {
               <Endpoint method="DELETE" path="/api/keys/:id" description="Revoke a license key" />
               <Endpoint method="GET" path="/api/logs" description="View audit logs (paginated)" />
               <Endpoint method="GET" path="/api/stats" description="Dashboard statistics" />
+              <Endpoint method="GET" path="/api/projects" description="List user's projects" />
+              <Endpoint
+                method="POST"
+                path="/api/projects"
+                description="Create a new project (auto-generates API secret)"
+                body={`{
+  "name": "My Game",
+  "description": "Game license management"
+}`}
+              />
+              <Endpoint method="GET" path="/api/projects/:id" description="Get project details with key count" />
+              <Endpoint
+                method="PATCH"
+                path="/api/projects/:id"
+                description="Update project or regenerate secret"
+                body={`{
+  "name": "New Name",
+  "description": "Updated description",
+  "regenerateSecret": true  // optional: generates new kv_ secret
+}`}
+              />
+              <Endpoint method="DELETE" path="/api/projects/:id" description="Delete project and all its keys" />
               <Endpoint method="GET" path="/api/heartbeat" description="Health check endpoint" />
+              <Endpoint method="GET" path="/api/admin" description="Admin only: list all users, projects, and keys" />
             </div>
           </DocSection>
 
@@ -692,7 +755,8 @@ export default function DocsPage() {
               description="Validate a license key and receive server-side variables. HWID is locked on first use."
               body={`{
   "key": "A1B2-C3D4-E5F6-G7H8",
-  "hwid": "sha256-hash-of-hardware-id"
+  "hwid": "sha256-hash-of-hardware-id",
+  "secret": "kv_abc123..."     // Project secret (optional, scopes to project)
 }`}
               response={`{
   "success": true,
@@ -700,6 +764,7 @@ export default function DocsPage() {
     "valid": true,
     "plan": "WEEKLY",
     "expiresAt": "2026-03-07T12:00:00.000Z",
+    "note": "VIP client",
     "serverVar": "encrypted-server-variable",
     "nonce": "one-time-nonce-rotated-per-call",
     "sessionId": "uuid-v4"
@@ -731,6 +796,7 @@ export default function DocsPage() {
   "action": "validate",          // validate | info | reset_hwid
   "key": "A1B2-C3D4-E5F6-G7H8",
   "hwid": "ABC123-PC-HARDWARE-ID",  // Real PC HWID from client
+  "secret": "kv_abc123...",         // Project secret (scopes to project)
   "telegram_id": "123456789",       // Optional, for audit logs
   "telegram_username": "johndoe"    // Optional, for audit logs
 }`}

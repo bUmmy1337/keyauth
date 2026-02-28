@@ -8,16 +8,21 @@ import { jwtVerify } from "jose";
 
 const PUBLIC_PATHS = [
   "/",
+  "/login",
+  "/docs",
   "/api/auth/login",
   "/api/auth/register",
   "/api/validate",
   "/api/heartbeat",
+  "/api/telegram",
 ];
 
 const API_AUTH_PATHS = [
   "/api/keys",
   "/api/logs",
   "/api/stats",
+  "/api/projects",
+  "/api/admin",
   "/api/auth/me",
   "/api/auth/logout",
 ];
@@ -65,7 +70,7 @@ export async function middleware(request: NextRequest) {
     }
     // Redirect to login for dashboard pages
     if (pathname.startsWith("/dashboard")) {
-      return NextResponse.redirect(new URL("/", request.url));
+      return NextResponse.redirect(new URL("/login", request.url));
     }
     return response;
   }
@@ -87,7 +92,7 @@ export async function middleware(request: NextRequest) {
       );
     }
     if (pathname.startsWith("/dashboard")) {
-      const redirectResponse = NextResponse.redirect(new URL("/", request.url));
+      const redirectResponse = NextResponse.redirect(new URL("/login", request.url));
       redirectResponse.cookies.delete("auth_token");
       return redirectResponse;
     }

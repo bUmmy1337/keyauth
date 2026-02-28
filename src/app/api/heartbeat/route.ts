@@ -23,15 +23,29 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { key: licenseKey, hwid, action } = await request.json();
+    const { key: licenseKey, hwid, action, secret: projectSecret } = await request.json();
 
     if (!licenseKey || !hwid) {
       return error("Key and HWID required.", 400);
     }
 
+    // Resolve project scope
+    let projectId: string | undefined;
+    if (projectSecret) {
+      const project = await prisma.project.findUnique({
+        where: { secret: projectSecret },
+        select: { id: true },
+      });
+      if (!project) return error("Invalid project secret.", 401);
+      projectId = project.id;
+    }
+
     // Find the key
+    const keyWhere: Record<string, unknown> = { status: "ACTIVE" };
+    if (projectId) keyWhere.projectId = projectId;
+
     const allKeys = await prisma.key.findMany({
-      where: { status: "ACTIVE" },
+      where: keyWhere,
       select: { id: true, key: true, hwid: true, activeSessions: true },
     });
 

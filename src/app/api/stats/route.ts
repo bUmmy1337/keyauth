@@ -1,10 +1,11 @@
 // ─────────────────────────────────────────────────────────
-// GET /api/stats — Dashboard statistics
+// GET /api/stats — Dashboard statistics (user-scoped)
+// ADMIN sees global stats, VIEWER sees only own keys
 // ─────────────────────────────────────────────────────────
 
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, type AuthPayload } from "@/lib/auth";
 import { success, error } from "@/lib/api-response";
 
 export async function GET(request: NextRequest) {
@@ -14,11 +15,22 @@ export async function GET(request: NextRequest) {
 
   if (!token) return error("Unauthorized.", 401);
 
+  let user: AuthPayload;
   try {
-    await verifyToken(token);
+    user = await verifyToken(token);
   } catch {
     return error("Invalid token.", 401);
   }
+
+  const isAdmin = user.role === "ADMIN";
+
+  // Optional project filter
+  const { searchParams } = new URL(request.url);
+  const projectId = searchParams.get("projectId") || undefined;
+
+  const keyScope: Record<string, unknown> = isAdmin ? {} : { createdById: user.sub };
+  if (projectId) keyScope.projectId = projectId;
+  const logScope: Record<string, unknown> = isAdmin ? {} : { userId: user.sub };
 
   const now = new Date();
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -33,28 +45,30 @@ export async function GET(request: NextRequest) {
     failedValidations,
     totalUsers,
   ] = await Promise.all([
-    prisma.key.count(),
-    prisma.key.count({ where: { status: "ACTIVE" } }),
-    prisma.key.count({ where: { status: "EXPIRED" } }),
-    prisma.key.count({ where: { status: "BANNED" } }),
-    prisma.log.count({ where: { action: { startsWith: "validate:" } } }),
+    prisma.key.count({ where: keyScope }),
+    prisma.key.count({ where: { ...keyScope, status: "ACTIVE" } }),
+    prisma.key.count({ where: { ...keyScope, status: "EXPIRED" } }),
+    prisma.key.count({ where: { ...keyScope, status: "BANNED" } }),
+    prisma.log.count({ where: { ...logScope, action: { startsWith: "validate:" } } }),
     prisma.log.count({
-      where: { action: { startsWith: "validate:" }, createdAt: { gte: dayAgo } },
+      where: { ...logScope, action: { startsWith: "validate:" }, createdAt: { gte: dayAgo } },
     }),
     prisma.log.count({
-      where: { action: { startsWith: "validate:" }, success: false },
+      where: { ...logScope, action: { startsWith: "validate:" }, success: false },
     }),
-    prisma.user.count(),
+    isAdmin ? prisma.user.count() : Promise.resolve(1),
   ]);
 
-  // Plan distribution
+  // Plan distribution (scoped)
   const planDistribution = await prisma.key.groupBy({
     by: ["plan"],
+    where: keyScope,
     _count: { plan: true },
   });
 
-  // Recent activity (last 10 logs)
+  // Recent activity (scoped)
   const recentActivity = await prisma.log.findMany({
+    where: logScope,
     orderBy: { createdAt: "desc" },
     take: 10,
     select: {

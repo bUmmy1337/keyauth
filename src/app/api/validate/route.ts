@@ -27,6 +27,7 @@ export const runtime = "nodejs";
 interface ValidateRequest {
   key: string;              // License key in plaintext
   hwid: string;             // Hardware ID fingerprint
+  secret?: string;          // Project secret (optional, filters by project)
   encrypted_payload?: string; // Optional E2E encrypted payload
 }
 
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { key: licenseKey, hwid } = body;
+    const { key: licenseKey, hwid, secret: projectSecret } = body;
 
     if (!licenseKey || !hwid) {
       return error("License key and HWID are required.", 400);
@@ -83,11 +84,26 @@ export async function POST(request: NextRequest) {
       return error("Too many validation attempts for this key.", 429);
     }
 
+    // ─── Resolve project scope ────────────────────────────
+    let projectId: string | undefined;
+    if (projectSecret) {
+      const project = await prisma.project.findUnique({
+        where: { secret: projectSecret },
+        select: { id: true },
+      });
+      if (!project) {
+        return error("Invalid project secret.", 401);
+      }
+      projectId = project.id;
+    }
+
     // ─── Find Key ─────────────────────────────────────────
     // We need to check all keys since the stored key is encrypted
-    // In production, store a deterministic hash for lookup
+    const keyWhere: Record<string, unknown> = { status: "ACTIVE" };
+    if (projectId) keyWhere.projectId = projectId;
+
     const allKeys = await prisma.key.findMany({
-      where: { status: "ACTIVE" },
+      where: keyWhere,
       select: {
         id: true,
         key: true,
@@ -99,6 +115,7 @@ export async function POST(request: NextRequest) {
         activeSessions: true,
         serverVar: true,
         serverNonce: true,
+        note: true,
         expiresAt: true,
       },
     });
@@ -183,6 +200,7 @@ export async function POST(request: NextRequest) {
       valid: true,
       plan: matchedKey.plan,
       expiresAt: matchedKey.expiresAt,
+      note: matchedKey.note,
       serverVar: serverVariable,
       nonce: newNonce,
       sessionId: crypto.randomUUID(),
