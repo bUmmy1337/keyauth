@@ -6,6 +6,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyPortalToken } from "@/lib/portal-auth";
+import { decrypt } from "@/lib/crypto";
 import { success, error } from "@/lib/api-response";
 
 export async function GET(request: NextRequest) {
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
         key: {
           select: {
             id: true,
+            key: true,
             mask: true,
             plan: true,
             status: true,
@@ -82,6 +84,7 @@ export async function GET(request: NextRequest) {
         ? {
             id: portalUser.key.id,
             mask: portalUser.key.mask,
+            decryptedKey: await decrypt(portalUser.key.key),
             plan: portalUser.key.plan,
             status: portalUser.key.status,
             hwidLocked: portalUser.key.hwidLocked,

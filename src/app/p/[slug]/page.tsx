@@ -28,6 +28,7 @@ interface DashboardConfig {
 interface KeyInfo {
   id: string;
   mask: string;
+  decryptedKey: string;
   plan: string;
   status: string;
   hwidLocked: boolean;
@@ -232,8 +233,8 @@ export default function PortalPage() {
 
   // ─── Copy key ───────────────────────────────────────────
   function copyKey() {
-    if (dashboardData?.key?.mask) {
-      navigator.clipboard.writeText(dashboardData.key.mask);
+    if (dashboardData?.key?.decryptedKey) {
+      navigator.clipboard.writeText(dashboardData.key.decryptedKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
