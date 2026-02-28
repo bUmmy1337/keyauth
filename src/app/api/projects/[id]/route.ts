@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     where: { id },
     include: {
       owner: { select: { email: true } },
-      _count: { select: { keys: true } },
+      _count: { select: { keys: true, portalUsers: true } },
     },
   });
 
@@ -66,7 +66,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   try {
     const body = await request.json();
-    const { name, description, regenerateSecret } = body;
+    const { name, description, regenerateSecret, slug, portalEnabled, loaderUrl, requireHwidForDownload, dashboardConfig } = body;
 
     const updateData: Record<string, unknown> = {};
 
@@ -80,6 +80,40 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     if (regenerateSecret === true) {
       updateData.secret = `kv_${generateSecureToken(32)}`;
+    }
+
+    if (slug && typeof slug === "string") {
+      const cleanSlug = slug.trim().toLowerCase()
+        .replace(/[^a-z0-9-]/g, "")
+        .replace(/-+/g, "-")
+        .substring(0, 50);
+      if (cleanSlug.length > 0) {
+        const existingSlug = await prisma.project.findFirst({
+          where: { slug: cleanSlug, id: { not: id } },
+        });
+        if (existingSlug) {
+          return error("This slug is already taken.", 409);
+        }
+        updateData.slug = cleanSlug;
+      }
+    }
+
+    if (portalEnabled !== undefined) {
+      updateData.portalEnabled = Boolean(portalEnabled);
+    }
+
+    if (loaderUrl !== undefined) {
+      updateData.loaderUrl = loaderUrl?.trim() || null;
+    }
+
+    if (requireHwidForDownload !== undefined) {
+      updateData.requireHwidForDownload = Boolean(requireHwidForDownload);
+    }
+
+    if (dashboardConfig !== undefined) {
+      updateData.dashboardConfig = typeof dashboardConfig === "string"
+        ? dashboardConfig
+        : JSON.stringify(dashboardConfig);
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -103,8 +137,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return success({
       id: updated.id,
       name: updated.name,
+      slug: updated.slug,
       secret: updated.secret,
       description: updated.description,
+      portalEnabled: updated.portalEnabled,
+      loaderUrl: updated.loaderUrl,
+      requireHwidForDownload: updated.requireHwidForDownload,
+      dashboardConfig: updated.dashboardConfig,
     });
   } catch {
     return error("Failed to update project.", 500);

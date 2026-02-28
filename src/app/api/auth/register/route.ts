@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────
-// POST /api/auth/register — Register a new user
+// POST /api/auth/register — Register a new admin user
 // • First user: auto-created as ADMIN (setup mode)
-// • Subsequent users: requires ADMIN auth token
+// • Subsequent users: requires ADMIN auth token (no self-registration)
 // ─────────────────────────────────────────────────────────
 
 import { NextRequest } from "next/server";
@@ -26,13 +26,11 @@ export async function POST(request: NextRequest) {
     const userCount = await prisma.user.count();
     const isSetup = userCount === 0;
 
-    // Check if caller is admin (optional — used for role assignment)
-    let callerRole: string | null = null;
-    if (!isSetup) {
-      const caller = await getAuthUser(request);
-      if (caller) {
-        callerRole = caller.role as string;
-      }
+    // After initial setup, only admins can create new users
+    const caller = isSetup ? null : await getAuthUser(request);
+
+    if (!isSetup && (!caller || caller.role !== "ADMIN")) {
+      return error("Registration is disabled. Only admins can create new users.", 403);
     }
 
     const body = await request.json();
@@ -56,12 +54,10 @@ export async function POST(request: NextRequest) {
       return error("A user with this email already exists.", 409);
     }
 
-    // First user is always ADMIN; ADMINs can assign roles; self-registration gets VIEWER
+    // First user is always ADMIN; subsequent users: admin assigns role
     const assignedRole = isSetup
       ? "ADMIN"
-      : callerRole === "ADMIN"
-        ? (role === "ADMIN" ? "ADMIN" : "VIEWER")
-        : "VIEWER";
+      : (role === "ADMIN" ? "ADMIN" : "VIEWER");
 
     const bcrypt = await import("bcryptjs");
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -84,7 +80,7 @@ export async function POST(request: NextRequest) {
       data: {
         action: isSetup ? "admin_registered" : "user_created",
         userId: user.id,
-        payload: isSetup ? undefined : JSON.stringify({ by: callerRole, role: assignedRole }),
+        payload: isSetup ? undefined : JSON.stringify({ by: caller?.role, role: assignedRole }),
         success: true,
       },
     });
@@ -94,8 +90,8 @@ export async function POST(request: NextRequest) {
       201
     );
 
-    // Set cookie for self-registration (setup or public)
-    if (!callerRole) {
+    // Set cookie for initial setup only
+    if (isSetup) {
       response.headers.set(
         "Set-Cookie",
         `auth_token=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400`

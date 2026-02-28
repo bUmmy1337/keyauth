@@ -24,7 +24,7 @@ export default function SettingsPage() {
 
   const apiEndpoints = [
     { method: "POST", path: "/api/auth/login", desc: "Admin authentication" },
-    { method: "POST", path: "/api/auth/register", desc: "Initial admin setup" },
+    { method: "POST", path: "/api/auth/register", desc: "Admin-only user creation" },
     { method: "GET", path: "/api/auth/me", desc: "Get current user" },
     { method: "POST", path: "/api/validate", desc: "License validation (client-facing)" },
     { method: "POST", path: "/api/heartbeat", desc: "Session heartbeat / deactivate" },
@@ -34,6 +34,11 @@ export default function SettingsPage() {
     { method: "DELETE", path: "/api/keys/:id", desc: "Revoke a key" },
     { method: "GET", path: "/api/logs", desc: "Audit log listing" },
     { method: "GET", path: "/api/stats", desc: "Dashboard statistics" },
+    { method: "GET", path: "/api/portal/info", desc: "Public project info for portal" },
+    { method: "POST", path: "/api/portal/register", desc: "Portal user registration" },
+    { method: "POST", path: "/api/portal/login", desc: "Portal user login" },
+    { method: "GET", path: "/api/portal/me", desc: "Portal user info & access" },
+    { method: "POST", path: "/api/portal/activate", desc: "Activate key for portal user" },
   ];
 
   const envVars = [

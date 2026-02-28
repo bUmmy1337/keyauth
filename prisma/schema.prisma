@@ -37,18 +37,27 @@ model User {
 model Project {
   id          String   @id @default(cuid())
   name        String
+  slug        String   @unique // URL slug for public portal page (/p/[slug])
   secret      String   @unique // API secret for validation
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Portal settings
+  portalEnabled          Boolean @default(true)   // Enable public user portal
+  loaderUrl              String?                   // Loader download URL
+  requireHwidForDownload Boolean @default(true)    // Require HWID binding to download loader
+  dashboardConfig        String? // JSON — portal dashboard layout config (blocks, buttons, etc.)
+
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId String
 
-  keys Key[]
+  keys         Key[]
+  portalUsers  PortalUser[]
 
   @@index([ownerId])
   @@index([secret])
+  @@index([slug])
   @@map("projects")
 }
 
@@ -83,7 +92,8 @@ model Key {
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String?
 
-  logs Log[]
+  logs       Log[]
+  portalUser PortalUser?
 
   @@index([key])
   @@index([hwid])
@@ -127,6 +137,28 @@ model RateLimit {
 
   @@index([identifier])
   @@map("rate_limits")
+}
+
+// ─────────────────────────────────────────────────────────
+// Portal Users — End-users of a project (key holders)
+// They register on /p/[slug] and can activate a license key
+// ─────────────────────────────────────────────────────────
+model PortalUser {
+  id        String   @id @default(cuid())
+  username  String
+  password  String   // bcrypt hashed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  keyId String? @unique
+  key   Key?    @relation(fields: [keyId], references: [id], onDelete: SetNull)
+
+  @@unique([username, projectId])
+  @@index([projectId])
+  @@map("portal_users")
 }
 
 // ─────────────────────────────────────────────────────────

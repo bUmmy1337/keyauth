@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: "desc" },
     include: {
       owner: { select: { email: true } },
-      _count: { select: { keys: true } },
+      _count: { select: { keys: true, portalUsers: true } },
     },
   });
 
@@ -65,12 +65,34 @@ export async function POST(request: NextRequest) {
     // Generate a unique project secret (64-char hex)
     const secret = `kv_${generateSecureToken(32)}`;
 
+    // Generate URL slug from project name
+    let slug = name.trim().toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .substring(0, 50);
+
+    // Ensure slug uniqueness
+    const existingSlug = await prisma.project.findUnique({ where: { slug } });
+    if (existingSlug) {
+      slug = `${slug}-${generateSecureToken(4)}`;
+    }
+
     const project = await prisma.project.create({
       data: {
         name: name.trim(),
+        slug,
         description: description?.trim() || null,
         secret,
         ownerId: user.sub,
+        dashboardConfig: JSON.stringify({
+          blocks: [
+            { type: "key_info", enabled: true, order: 0 },
+            { type: "copy_key", enabled: true, label: "Copy Key", order: 1 },
+            { type: "download_loader", enabled: true, label: "Download Loader", order: 2 },
+            { type: "hwid_status", enabled: true, order: 3 },
+          ],
+        }),
       },
     });
 
@@ -86,6 +108,7 @@ export async function POST(request: NextRequest) {
     return success({
       id: project.id,
       name: project.name,
+      slug: project.slug,
       secret: project.secret,
       description: project.description,
       createdAt: project.createdAt,

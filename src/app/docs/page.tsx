@@ -180,6 +180,7 @@ const tocItems = [
   { id: "overview", label: "Overview" },
   { id: "auth", label: "Authentication" },
   { id: "projects", label: "Projects" },
+  { id: "portal", label: "User Portal" },
   { id: "endpoints", label: "API Endpoints" },
   { id: "validate", label: "License Validation" },
   { id: "telegram", label: "Telegram Bot" },
@@ -610,6 +611,10 @@ export default function DocsPage() {
                 { title: "Rate Limiting", desc: "Per-IP and per-key request throttling" },
                 { title: "Audit Logs", desc: "Every action is logged with IP and HWID" },
                 { title: "Telegram Bot", desc: "Native API for Telegram bot integration" },
+                { title: "User Portal", desc: "Per-project user dashboards with customizable blocks" },
+                { title: "Portal Editor", desc: "Drag-and-drop dashboard builder for each project" },
+                { title: "No-Key Flow", desc: "Users can register without a key, add one later" },
+                { title: "HWID Gating", desc: "Restrict features until HWID is bound in loader" },
                 { title: "Admin Panel", desc: "Full admin view of all users, projects, and keys" },
               ].map((f) => (
                 <div key={f.title} className="rounded-2xl border border-white/[0.04] bg-white/[0.015] p-4">
@@ -624,7 +629,7 @@ export default function DocsPage() {
           <DocSection
             id="auth"
             title="Authentication"
-            description="Admin endpoints require a Bearer token obtained via the login endpoint. Public endpoints (validate, telegram) don't require authentication."
+            description="Admin endpoints require a Bearer token obtained via the login endpoint. Public endpoints (validate, telegram, portal) don't require admin authentication. Self-registration is disabled — only the first user (setup) and admin-created users are allowed."
             delay={0.1}
           >
             <Endpoint
@@ -675,6 +680,125 @@ export default function DocsPage() {
             </div>
           </DocSection>
 
+          {/* ─── User Portal ────────────────────────────── */}
+          <DocSection
+            id="portal"
+            title="User Portal"
+            description="Each project gets a public-facing user portal at /p/[slug]. End-users can register, activate license keys, download the loader, and view their account status — all configurable via the Portal Dashboard Editor."
+            delay={0.13}
+          >
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/[0.04] bg-white/[0.015] p-5">
+                <h4 className="text-xs font-semibold text-white/60">User Flow</h4>
+                <ol className="mt-2 space-y-2 text-[11px] leading-relaxed text-white/30">
+                  <li><span className="text-white/50 font-medium">1.</span> User visits <code className="rounded bg-white/[0.06] px-1 py-0.5 text-white/40">/p/your-project-slug</code></li>
+                  <li><span className="text-white/50 font-medium">2.</span> Creates an account (no key required) or signs in</li>
+                  <li><span className="text-white/50 font-medium">3.</span> Enters license key to activate it on their account</li>
+                  <li><span className="text-white/50 font-medium">4.</span> Downloads the loader and binds HWID</li>
+                  <li><span className="text-white/50 font-medium">5.</span> Full access granted after HWID binding</li>
+                </ol>
+              </div>
+              <div className="rounded-2xl border border-white/[0.04] bg-white/[0.015] p-5">
+                <h4 className="text-xs font-semibold text-white/60">Access Levels</h4>
+                <div className="mt-2 space-y-2 text-[11px] leading-relaxed text-white/30">
+                  <div className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-red-400/60" /><span><strong className="text-white/40">No key:</strong> Limited view, can only activate a key</span></div>
+                  <div className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-amber-400/60" /><span><strong className="text-white/40">Key activated, no HWID:</strong> Key info visible, loader download prompt</span></div>
+                  <div className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-emerald-400/60" /><span><strong className="text-white/40">Full access (HWID bound):</strong> All features unlocked</span></div>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-white/[0.04] bg-white/[0.015] p-5">
+                <h4 className="text-xs font-semibold text-white/60">Portal Dashboard Editor</h4>
+                <p className="mt-2 text-[11px] leading-relaxed text-white/30">
+                  In project settings, use the Portal Dashboard Editor to customize which blocks appear on the user portal. Available blocks:
+                </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {[
+                    { block: "key_info", desc: "License status, plan, expiry, sessions" },
+                    { block: "copy_key", desc: "Button to copy the license key mask" },
+                    { block: "download_loader", desc: "Loader download with HWID gating" },
+                    { block: "hwid_status", desc: "HWID binding status indicator" },
+                    { block: "custom_button", desc: "External link (Discord, website, etc.)" },
+                    { block: "custom_text", desc: "Custom paragraph of text" },
+                  ].map((b) => (
+                    <div key={b.block} className="rounded-xl border border-white/[0.04] bg-white/[0.01] p-3">
+                      <code className="text-xs font-medium text-emerald-400/60">{b.block}</code>
+                      <p className="mt-1 text-[11px] text-white/30">{b.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <Endpoint
+                method="POST"
+                path="/api/portal/register"
+                description="Register a portal user (no key required)"
+                body={`{
+  "username": "player123",
+  "password": "securepass",
+  "projectId": "clxxx..."
+}`}
+                response={`{
+  "success": true,
+  "data": {
+    "token": "eyJ...",
+    "user": { "id": "...", "username": "player123", "projectId": "...", "keyId": null }
+  }
+}`}
+              />
+              <Endpoint
+                method="POST"
+                path="/api/portal/login"
+                description="Login as a portal user"
+                body={`{
+  "username": "player123",
+  "password": "securepass",
+  "projectId": "clxxx..."
+}`}
+              />
+              <Endpoint
+                method="GET"
+                path="/api/portal/me"
+                description="Get portal user info, key data, access level, and project dashboard config. Requires portal_token cookie or Bearer token."
+                response={`{
+  "success": true,
+  "data": {
+    "user": { "id": "...", "username": "player123" },
+    "key": { "mask": "A1B2-****-****-G7H8", "plan": "MONTHLY", "status": "ACTIVE", "hwidLocked": true },
+    "access": {
+      "hasKey": true,
+      "keyActive": true,
+      "hwidBound": true,
+      "fullAccess": true,
+      "canDownloadLoader": true,
+      "loaderUrl": "https://..."
+    }
+  }
+}`}
+              />
+              <Endpoint
+                method="POST"
+                path="/api/portal/activate"
+                description="Activate a license key on portal user account. Requires portal auth."
+                body={`{
+  "key": "A1B2-C3D4-E5F6-G7H8"
+}`}
+                response={`{
+  "success": true,
+  "data": {
+    "message": "Key activated successfully!",
+    "key": { "mask": "A1B2-****-****-G7H8", "plan": "WEEKLY", "status": "ACTIVE" },
+    "needsHwidBinding": true
+  }
+}`}
+              />
+              <Endpoint
+                method="GET"
+                path="/api/portal/info?slug=my-project"
+                description="Get public project info for portal page (no auth required)"
+              />
+              <Endpoint method="POST" path="/api/portal/logout" description="Clear portal auth cookie" />
+            </div>
+          </DocSection>
+
           {/* ─── API Endpoints ───────────────────────────── */}
           <DocSection
             id="endpoints"
@@ -684,7 +808,7 @@ export default function DocsPage() {
           >
             <div className="space-y-4">
               <Endpoint method="POST" path="/api/auth/login" description="Login and get JWT token" />
-              <Endpoint method="POST" path="/api/auth/register" description="Register a new admin (first-use only)" />
+              <Endpoint method="POST" path="/api/auth/register" description="Register a new admin (first-use setup or admin-only)" />
               <Endpoint method="POST" path="/api/auth/logout" description="Clear auth cookie" />
               <Endpoint method="GET" path="/api/auth/me" description="Get current user info" />
               <Endpoint method="GET" path="/api/keys?projectId=xxx" description="List all license keys (paginated, optional project filter)" />
@@ -739,6 +863,12 @@ export default function DocsPage() {
               <Endpoint method="DELETE" path="/api/projects/:id" description="Delete project and all its keys" />
               <Endpoint method="GET" path="/api/heartbeat" description="Health check endpoint" />
               <Endpoint method="GET" path="/api/admin" description="Admin only: list all users, projects, and keys" />
+              <Endpoint method="GET" path="/api/portal/info?slug=xxx" description="Public project info for portal page" />
+              <Endpoint method="POST" path="/api/portal/register" description="Register a portal user (no key required)" />
+              <Endpoint method="POST" path="/api/portal/login" description="Login as a portal user" />
+              <Endpoint method="GET" path="/api/portal/me" description="Get portal user info, key status, and access level" />
+              <Endpoint method="POST" path="/api/portal/activate" description="Activate a license key on portal user account" />
+              <Endpoint method="POST" path="/api/portal/logout" description="Clear portal auth cookie" />
             </div>
           </DocSection>
 

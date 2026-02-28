@@ -44,20 +44,23 @@ export async function GET(request: NextRequest) {
         select: {
           id: true,
           name: true,
+          slug: true,
           secret: true,
           description: true,
+          portalEnabled: true,
           createdAt: true,
-          _count: { select: { keys: true } },
+          _count: { select: { keys: true, portalUsers: true } },
         },
       },
     },
   });
 
   // Global stats
-  const [totalKeys, totalProjects, activeKeys] = await Promise.all([
+  const [totalKeys, totalProjects, activeKeys, totalPortalUsers] = await Promise.all([
     prisma.key.count(),
     prisma.project.count(),
     prisma.key.count({ where: { status: "ACTIVE" } }),
+    prisma.portalUser.count(),
   ]);
 
   return success({
@@ -67,6 +70,7 @@ export async function GET(request: NextRequest) {
       totalProjects,
       totalKeys,
       activeKeys,
+      totalPortalUsers,
     },
   });
 }
