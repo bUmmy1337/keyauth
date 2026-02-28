@@ -1,0 +1,122 @@
+// ─────────────────────────────────────────────────────────
+// Prisma Schema — Self KeyAuth
+// Database: PostgreSQL (Vercel Postgres / Supabase)
+// ─────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────
+// Users — Admin accounts that manage licenses
+// ─────────────────────────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // bcrypt hashed
+  role      Role     @default(ADMIN)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  keys Key[]
+  logs Log[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────
+// License Keys — Core licensing entity
+// ─────────────────────────────────────────────────────────
+model Key {
+  id          String    @id @default(cuid())
+  key         String    @unique // The actual license key (encrypted)
+  mask        String    // Visible prefix for UI display (e.g., XXXX-****-****)
+  plan        Plan      @default(DAILY)
+  status      KeyStatus @default(ACTIVE)
+  hwid        String?   // Hardware ID lock (motherboard UUID + disk serial hash)
+  hwidLocked  Boolean   @default(false)
+  maxSessions Int       @default(1)
+  activeSessions Int    @default(0)
+
+  // Server-side variables (anti memory-patch)
+  serverVar   String?   // Encrypted variable sent only on valid auth
+  serverNonce String?   // One-time nonce rotated per validation
+
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdById String
+
+  logs Log[]
+
+  @@index([key])
+  @@index([hwid])
+  @@index([status, expiresAt])
+  @@map("keys")
+}
+
+// ─────────────────────────────────────────────────────────
+// Audit Logs — Every action is logged
+// ─────────────────────────────────────────────────────────
+model Log {
+  id        String   @id @default(cuid())
+  action    String   // e.g., "validate", "login", "key_create", "hwid_reset"
+  ip        String?
+  userAgent String?
+  hwid      String?
+  payload   String?  // Encrypted JSON blob
+  success   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  keyId  String?
+  key    Key?    @relation(fields: [keyId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+  @@index([keyId])
+  @@map("logs")
+}
+
+// ─────────────────────────────────────────────────────────
+// Rate Limit Buckets — Persisted rate limiting
+// ─────────────────────────────────────────────────────────
+model RateLimit {
+  id         String   @id @default(cuid())
+  identifier String   @unique // IP or API key hash
+  tokens     Int      @default(10)
+  lastRefill DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([identifier])
+  @@map("rate_limits")
+}
+
+// ─────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────
+enum Role {
+  ADMIN
+  VIEWER
+}
+
+enum Plan {
+  DAILY
+  WEEKLY
+  LIFETIME
+}
+
+enum KeyStatus {
+  ACTIVE
+  EXPIRED
+  BANNED
+  REVOKED
+}
