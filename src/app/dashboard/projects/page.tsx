@@ -53,6 +53,7 @@ const BLOCK_TYPES = [
   { type: "copy_key", label: "Copy Key", desc: "Button to copy license key" },
   { type: "download_loader", label: "Download Loader", desc: "Loader download button" },
   { type: "hwid_status", label: "HWID Status", desc: "Shows hardware ID binding state" },
+  { type: "chat", label: "Chat", desc: "In-project chat between all portal users" },
   { type: "custom_button", label: "Custom Button", desc: "External link button" },
   { type: "custom_text", label: "Custom Text", desc: "Paragraph of text" },
 ];
@@ -77,6 +78,10 @@ export default function ProjectsPage() {
   const [editorRequireHwid, setEditorRequireHwid] = useState(true);
   const [editorBlocks, setEditorBlocks] = useState<DashboardBlock[]>([]);
   const [editorSaving, setEditorSaving] = useState(false);
+
+  // Logo upload state
+  const [editorLogoPreview, setEditorLogoPreview] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   const fetchProjects = useCallback(async () => {
     const res = await api.get("/api/projects");
@@ -173,6 +178,7 @@ export default function ProjectsPage() {
     setEditorLoaderUrl(p.loaderUrl || "");
     setEditorPortalEnabled(p.portalEnabled !== false);
     setEditorRequireHwid(p.requireHwidForDownload !== false);
+    setEditorLogoPreview(p.logoData || null);
 
     try {
       const config: DashboardConfig = p.dashboardConfig
@@ -241,6 +247,76 @@ export default function ProjectsPage() {
     } else {
       toast(data.error || "Failed to save", "error");
     }
+  }
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !editProject) return;
+
+    if (file.type !== "image/png") {
+      toast("Only PNG images are supported", "error");
+      return;
+    }
+
+    if (file.size > 512 * 1024) {
+      toast("Logo too large (max 512KB)", "error");
+      return;
+    }
+
+    setLogoUploading(true);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUri = reader.result as string;
+
+      try {
+        const res = await fetch(`/api/projects/${editProject.id}/logo`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ logoData: dataUri }),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          setEditorLogoPreview(dataUri);
+          toast("Logo uploaded", "success");
+        } else {
+          toast(data.error || "Failed to upload logo", "error");
+        }
+      } catch {
+        toast("Failed to upload logo", "error");
+      }
+
+      setLogoUploading(false);
+    };
+    reader.readAsDataURL(file);
+    // Reset input so the same file can be re-selected
+    e.target.value = "";
+  }
+
+  async function handleLogoRemove() {
+    if (!editProject) return;
+    setLogoUploading(true);
+
+    try {
+      const res = await fetch(`/api/projects/${editProject.id}/logo`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setEditorLogoPreview(null);
+        toast("Logo removed", "success");
+      } else {
+        toast(data.error || "Failed to remove logo", "error");
+      }
+    } catch {
+      toast("Failed to remove logo", "error");
+    }
+
+    setLogoUploading(false);
   }
 
   return (
@@ -488,6 +564,50 @@ export default function ProjectsPage() {
             {/* General settings */}
             <div className="space-y-4">
               <h4 className="text-xs font-medium uppercase tracking-wider text-white/30">General</h4>
+
+              {/* Logo upload */}
+              <div className="rounded-xl bg-white/[0.02] px-4 py-4 border border-white/[0.04] space-y-3">
+                <p className="text-sm text-white/60">Project Logo</p>
+                <p className="text-[10px] text-white/20">PNG only, max 512KB. Shown on the portal page.</p>
+                <div className="flex items-center gap-4">
+                  {editorLogoPreview ? (
+                    <img
+                      src={editorLogoPreview}
+                      alt="Logo"
+                      className="h-14 w-14 rounded-2xl object-contain border border-white/[0.08] bg-white/[0.03]"
+                    />
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.03] border border-dashed border-white/[0.08]">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-white/15">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <label className="cursor-pointer rounded-lg bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-white/50 transition-colors hover:bg-white/[0.10] border border-white/[0.06]">
+                      {logoUploading ? "..." : "Upload PNG"}
+                      <input
+                        type="file"
+                        accept="image/png"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                        disabled={logoUploading}
+                      />
+                    </label>
+                    {editorLogoPreview && (
+                      <button
+                        onClick={handleLogoRemove}
+                        disabled={logoUploading}
+                        className="rounded-lg px-3 py-1.5 text-[10px] font-medium text-red-400/50 transition-colors hover:bg-red-400/[0.06] hover:text-red-400/80 disabled:opacity-50"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
 
               <div className="flex items-center justify-between rounded-xl bg-white/[0.02] px-4 py-3 border border-white/[0.04]">
                 <div>

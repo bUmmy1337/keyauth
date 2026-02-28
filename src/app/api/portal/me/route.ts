@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
             loaderUrl: true,
             requireHwidForDownload: true,
             dashboardConfig: true,
+            logoData: true,
           },
         },
       },
@@ -99,6 +100,7 @@ export async function GET(request: NextRequest) {
         dashboardConfig: portalUser.project.dashboardConfig
           ? JSON.parse(portalUser.project.dashboardConfig)
           : null,
+        logoData: portalUser.project.logoData || null,
       },
       access: {
         hasKey,

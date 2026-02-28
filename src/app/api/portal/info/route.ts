@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
       loaderUrl: true,
       requireHwidForDownload: true,
       dashboardConfig: true,
+      logoData: true,
     },
   });
 
@@ -43,5 +44,6 @@ export async function GET(request: NextRequest) {
     dashboardConfig: project.dashboardConfig
       ? JSON.parse(project.dashboardConfig)
       : null,
+    logoData: project.logoData || null,
   });
 }

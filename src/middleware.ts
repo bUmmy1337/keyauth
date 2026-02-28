@@ -25,6 +25,7 @@ const PUBLIC_PATHS = [
 const PORTAL_AUTH_PATHS = [
   "/api/portal/me",
   "/api/portal/activate",
+  "/api/portal/chat",
 ];
 
 const API_AUTH_PATHS = [

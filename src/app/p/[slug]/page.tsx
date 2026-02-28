@@ -6,7 +6,7 @@
 // loader download, HWID status, and customizable blocks.
 // ─────────────────────────────────────────────────────────
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -48,12 +48,20 @@ interface AccessInfo {
   loaderUrl: string | null;
 }
 
+interface ChatMsg {
+  id: string;
+  text: string;
+  createdAt: string;
+  author: { id: string; username: string };
+}
+
 interface ProjectInfo {
   id: string;
   name: string;
   slug: string;
   description: string | null;
   dashboardConfig: DashboardConfig | null;
+  logoData: string | null;
 }
 
 interface PortalMeResponse {
@@ -76,7 +84,7 @@ export default function PortalPage() {
 
   const [view, setView] = useState<"loading" | "auth" | "dashboard" | "error">("loading");
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [projectInfo, setProjectInfo] = useState<{ id: string; name: string; description: string | null } | null>(null);
+  const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null);
   const [dashboardData, setDashboardData] = useState<PortalMeResponse | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
@@ -84,6 +92,14 @@ export default function PortalPage() {
   const [activateError, setActivateError] = useState<string | null>(null);
   const [activateLoading, setActivateLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ─── Check auth on load ─────────────────────────────────
   const loadProject = useCallback(async () => {
@@ -101,6 +117,9 @@ export default function PortalPage() {
         id: infoData.data.id,
         name: infoData.data.name,
         description: infoData.data.description,
+        slug: infoData.data.slug,
+        dashboardConfig: infoData.data.dashboardConfig,
+        logoData: infoData.data.logoData || null,
       });
 
       // Try to check existing auth
@@ -220,6 +239,57 @@ export default function PortalPage() {
     }
   }
 
+  // ─── Chat functions ──────────────────────────────────────
+  const fetchChatMessages = useCallback(async () => {
+    try {
+      const res = await fetch("/api/portal/chat", { credentials: "include" });
+      const data = await res.json();
+      if (data.success) {
+        setChatMessages(data.data.messages);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  async function sendChatMessage() {
+    const text = chatInput.trim();
+    if (!text || chatSending) return;
+    setChatSending(true);
+
+    try {
+      const res = await fetch("/api/portal/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setChatMessages((prev) => [...prev, data.data.message]);
+        setChatInput("");
+      }
+    } catch { /* ignore */ }
+
+    setChatSending(false);
+  }
+
+  // Scroll chat to bottom when new messages arrive
+  useEffect(() => {
+    if (chatOpen) chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, chatOpen]);
+
+  // Poll chat every 5s when open
+  useEffect(() => {
+    if (chatOpen && view === "dashboard") {
+      fetchChatMessages();
+      chatPollRef.current = setInterval(fetchChatMessages, 5000);
+      return () => {
+        if (chatPollRef.current) clearInterval(chatPollRef.current);
+      };
+    } else {
+      if (chatPollRef.current) clearInterval(chatPollRef.current);
+    }
+  }, [chatOpen, view, fetchChatMessages]);
+
   // ─── Loading state ──────────────────────────────────────
   if (view === "loading") {
     return (
@@ -264,11 +334,19 @@ export default function PortalPage() {
         >
           {/* Project header */}
           <div className="mb-8 text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] border border-white/[0.08]">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-              </svg>
-            </div>
+            {projectInfo?.logoData ? (
+              <img
+                src={projectInfo.logoData}
+                alt={projectInfo.name}
+                className="mx-auto mb-3 h-12 w-12 rounded-2xl object-contain border border-white/[0.08]"
+              />
+            ) : (
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] border border-white/[0.08]">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
+                </svg>
+              </div>
+            )}
             <h1 className="text-xl font-semibold tracking-tight text-white">
               {projectInfo?.name}
             </h1>
@@ -378,11 +456,19 @@ export default function PortalPage() {
       <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/[0.04] bg-black/60 backdrop-blur-2xl">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-6">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/[0.08]">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-              </svg>
-            </div>
+            {data.project.logoData ? (
+              <img
+                src={data.project.logoData}
+                alt={data.project.name}
+                className="h-7 w-7 rounded-xl object-contain"
+              />
+            ) : (
+              <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/[0.08]">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
+                </svg>
+              </div>
+            )}
             <span className="text-sm font-semibold tracking-tight text-white/80">
               {data.project.name}
             </span>
@@ -624,6 +710,93 @@ export default function PortalPage() {
               {block.type === "custom_text" && block.content && (
                 <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02] p-6 backdrop-blur-xl">
                   <p className="text-sm leading-relaxed text-white/50">{block.content}</p>
+                </div>
+              )}
+
+              {block.type === "chat" && (
+                <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl overflow-hidden">
+                  {/* Chat header */}
+                  <button
+                    onClick={() => setChatOpen(!chatOpen)}
+                    className="flex w-full items-center justify-between p-6 transition-colors hover:bg-white/[0.02]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-400/10">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-violet-400/70">
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-xs font-medium uppercase tracking-wider text-white/30">
+                        {block.label || "Project Chat"}
+                      </h3>
+                    </div>
+                    <svg
+                      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                      className={`text-white/20 transition-transform duration-200 ${chatOpen ? "rotate-180" : ""}`}
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+
+                  {/* Chat body */}
+                  <AnimatePresence>
+                    {chatOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        {/* Messages */}
+                        <div className="h-72 overflow-y-auto border-t border-white/[0.04] px-4 py-3 space-y-2">
+                          {chatMessages.length === 0 && (
+                            <p className="py-8 text-center text-xs text-white/15">No messages yet. Start the conversation!</p>
+                          )}
+                          {chatMessages.map((msg) => {
+                            const isMe = msg.author.id === data.user.id;
+                            return (
+                              <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                                <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 ${
+                                  isMe
+                                    ? "bg-violet-400/10 border border-violet-400/10"
+                                    : "bg-white/[0.04] border border-white/[0.04]"
+                                }`}>
+                                  {!isMe && (
+                                    <p className="mb-0.5 text-[10px] font-medium text-violet-400/50">{msg.author.username}</p>
+                                  )}
+                                  <p className="text-xs text-white/60 break-words">{msg.text}</p>
+                                  <p className="mt-0.5 text-[9px] text-white/15 text-right">
+                                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div ref={chatEndRef} />
+                        </div>
+
+                        {/* Input */}
+                        <div className="border-t border-white/[0.04] p-3 flex gap-2">
+                          <input
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                            placeholder="Type a message..."
+                            maxLength={2000}
+                            className="flex-1 rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-2 text-xs text-white/70 placeholder-white/15 outline-none transition-all focus:border-white/[0.12]"
+                          />
+                          <button
+                            onClick={sendChatMessage}
+                            disabled={chatSending || !chatInput.trim()}
+                            className="rounded-xl bg-violet-400/10 px-4 py-2 text-xs font-medium text-violet-400/70 transition-all hover:bg-violet-400/20 disabled:opacity-30 border border-violet-400/20"
+                          >
+                            {chatSending ? "..." : "Send"}
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
             </motion.div>

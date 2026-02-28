@@ -54,6 +54,10 @@ model Project {
 
   keys         Key[]
   portalUsers  PortalUser[]
+  chatMessages ChatMessage[]
+
+  // Branding
+  logoData     String?  // Base64-encoded PNG logo (data URI)
 
   @@index([ownerId])
   @@index([secret])
@@ -156,9 +160,30 @@ model PortalUser {
   keyId String? @unique
   key   Key?    @relation(fields: [keyId], references: [id], onDelete: SetNull)
 
+  chatMessages ChatMessage[]
+
   @@unique([username, projectId])
   @@index([projectId])
   @@map("portal_users")
+}
+
+// ─────────────────────────────────────────────────────────
+// Chat Messages — In-project chat between portal users
+// ─────────────────────────────────────────────────────────
+model ChatMessage {
+  id        String   @id @default(cuid())
+  text      String   // Message content (max ~2000 chars enforced in API)
+  createdAt DateTime @default(now())
+
+  authorId  String
+  author    PortalUser @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([authorId])
+  @@map("chat_messages")
 }
 
 // ─────────────────────────────────────────────────────────
