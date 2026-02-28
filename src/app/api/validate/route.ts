@@ -200,8 +200,8 @@ export async function POST(request: NextRequest) {
     // ─── Successfully validated ───────────────────────────
     await logValidation(ip, request, matchedKey.id, hwid, true, "validated");
 
-    // Return encrypted response with server-side variables
-    return encryptedSuccess({
+    // Build response payload
+    const responseData = {
       valid: true,
       plan: matchedKey.plan,
       expiresAt: matchedKey.expiresAt,
@@ -209,7 +209,14 @@ export async function POST(request: NextRequest) {
       serverVar: serverVariable,
       nonce: newNonce,
       sessionId: crypto.randomUUID(),
-    });
+    };
+
+    // If the client sent an encrypted payload, respond encrypted too;
+    // otherwise return plain JSON (matches docs & code examples)
+    if (body.encrypted_payload) {
+      return encryptedSuccess(responseData);
+    }
+    return success(responseData);
   } catch (err) {
     console.error("Validation error:", err);
     return error("Internal validation error.", 500);
