@@ -167,7 +167,11 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── Session Check ────────────────────────────────────
-    if (matchedKey.activeSessions >= matchedKey.maxSessions) {
+    // If the same HWID is re-validating (same machine), reuse its
+    // existing session slot instead of allocating a new one.
+    const isSameDevice = matchedKey.hwid === hwidHash;
+
+    if (!isSameDevice && matchedKey.activeSessions >= matchedKey.maxSessions) {
       await logValidation(ip, request, matchedKey.id, hwid, false, "max_sessions");
       return error("Maximum concurrent sessions reached.", 403);
     }
@@ -178,7 +182,8 @@ export async function POST(request: NextRequest) {
       where: { id: matchedKey.id },
       data: {
         serverNonce: newNonce,
-        activeSessions: { increment: 1 },
+        // Only increment session count for new devices
+        ...(isSameDevice ? {} : { activeSessions: { increment: 1 } }),
       },
     });
 
