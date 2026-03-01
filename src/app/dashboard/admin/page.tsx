@@ -17,6 +17,8 @@ interface ProjectInfo {
   secret: string;
   description: string | null;
   createdAt: string;
+  dllHash: string | null;
+  dllUploadedAt: string | null;
   _count: { keys: number };
 }
 
@@ -44,6 +46,8 @@ export default function AdminPage() {
   const [data, setData] = useState<AdminResponse | null>(null);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(new Set());
+  const [dllUploading, setDllUploading] = useState<string | null>(null);
+  const [dllMsg, setDllMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null);
 
   const fetchData = useCallback(async () => {
     const res = await api.get("/api/admin");
@@ -66,6 +70,80 @@ export default function AdminPage() {
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
+  }
+
+  async function handleDllUpload(projectId: string) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".dll";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      if (file.size > 50 * 1024 * 1024) {
+        setDllMsg({ id: projectId, text: "DLL exceeds 50 MB limit.", ok: false });
+        return;
+      }
+
+      setDllUploading(projectId);
+      setDllMsg(null);
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+
+        const res = await fetch("/api/admin/dll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ projectId, dll: base64 }),
+        });
+
+        const json = await res.json();
+        if (json.success) {
+          setDllMsg({ id: projectId, text: `Uploaded (${(file.size / 1024).toFixed(0)} KB, SHA-256: ${json.data.hash.substring(0, 16)}...)`, ok: true });
+          fetchData();
+        } else {
+          setDllMsg({ id: projectId, text: json.error || "Upload failed.", ok: false });
+        }
+      } catch (err) {
+        setDllMsg({ id: projectId, text: "Network error during upload.", ok: false });
+      } finally {
+        setDllUploading(null);
+      }
+    };
+    input.click();
+  }
+
+  async function handleDllDelete(projectId: string) {
+    if (!confirm("Remove DLL payload from this project?")) return;
+
+    setDllUploading(projectId);
+    try {
+      const res = await fetch("/api/admin/dll", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ projectId }),
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        setDllMsg({ id: projectId, text: "DLL removed.", ok: true });
+        fetchData();
+      } else {
+        setDllMsg({ id: projectId, text: json.error || "Failed to remove.", ok: false });
+      }
+    } catch {
+      setDllMsg({ id: projectId, text: "Network error.", ok: false });
+    } finally {
+      setDllUploading(null);
+    }
   }
 
   if (api.loading && !data) {
@@ -260,6 +338,60 @@ export default function AdminPage() {
                           <p className="mt-2 text-[10px] text-white/15">
                             Created {new Date(project.createdAt).toLocaleDateString()}
                           </p>
+
+                          {/* DLL Payload Management */}
+                          <div className="mt-3 rounded-xl border border-white/[0.04] bg-white/[0.02] p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-white/30">
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                  <polyline points="14 2 14 8 20 8" />
+                                  <line x1="16" y1="13" x2="8" y2="13" />
+                                  <line x1="16" y1="17" x2="8" y2="17" />
+                                </svg>
+                                <span className="text-[10px] font-medium uppercase tracking-widest text-white/25">
+                                  DLL Payload
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => handleDllUpload(project.id)}
+                                  disabled={dllUploading === project.id}
+                                  className="rounded-lg bg-white/[0.04] px-2.5 py-1 text-[10px] font-medium text-white/40 transition-all hover:bg-white/[0.08] hover:text-white/60 disabled:opacity-30"
+                                >
+                                  {dllUploading === project.id ? "Uploading..." : project.dllHash ? "Replace" : "Upload"}
+                                </button>
+                                {project.dllHash && (
+                                  <button
+                                    onClick={() => handleDllDelete(project.id)}
+                                    disabled={dllUploading === project.id}
+                                    className="rounded-lg bg-red-500/[0.06] px-2 py-1 text-[10px] font-medium text-red-400/50 transition-all hover:bg-red-500/[0.12] hover:text-red-400/70 disabled:opacity-30"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            {project.dllHash ? (
+                              <div className="mt-2 space-y-1">
+                                <p className="font-mono text-[9px] text-emerald-400/40">
+                                  SHA-256: {project.dllHash.substring(0, 32)}...
+                                </p>
+                                <p className="text-[9px] text-white/20">
+                                  Uploaded {project.dllUploadedAt ? new Date(project.dllUploadedAt).toLocaleString() : "unknown"}
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="mt-1.5 text-[9px] text-white/15">
+                                No DLL uploaded. Upload a .dll to enable secure loader delivery.
+                              </p>
+                            )}
+                            {dllMsg?.id === project.id && (
+                              <p className={`mt-1.5 text-[9px] ${dllMsg.ok ? "text-emerald-400/50" : "text-red-400/50"}`}>
+                                {dllMsg.text}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>

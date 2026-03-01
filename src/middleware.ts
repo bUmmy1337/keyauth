@@ -20,6 +20,9 @@ const PUBLIC_PATHS = [
   "/api/portal/register",
   "/api/portal/login",
   "/api/portal/logout",
+  // Secure loader endpoints (auth is handled internally via key+hwid)
+  "/api/loader/handshake",
+  "/api/loader/download",
 ];
 
 const PORTAL_AUTH_PATHS = [

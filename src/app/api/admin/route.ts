@@ -49,6 +49,8 @@ export async function GET(request: NextRequest) {
           description: true,
           portalEnabled: true,
           createdAt: true,
+          dllHash: true,
+          dllUploadedAt: true,
           _count: { select: { keys: true, portalUsers: true } },
         },
       },
