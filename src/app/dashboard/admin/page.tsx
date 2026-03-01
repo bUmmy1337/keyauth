@@ -229,6 +229,112 @@ export default function AdminPage() {
         />
       </div>
 
+      {/* ═══════ DLL Payload Management (top-level) ═══════ */}
+      {(() => {
+        const allProjects = data?.users.flatMap((u) =>
+          u.projects.map((p) => ({ ...p, ownerEmail: u.email }))
+        ) ?? [];
+        if (allProjects.length === 0) return null;
+        return (
+          <GlassCard hover={false} delay={0.22} className="overflow-hidden p-0">
+            <div className="border-b border-white/[0.04] px-6 py-4 flex items-center gap-3">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-violet-400/60">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+              <div>
+                <h3 className="text-xs font-medium uppercase tracking-wider text-white/40">
+                  DLL Payload Management
+                </h3>
+                <p className="text-[10px] text-white/20 mt-0.5">
+                  Upload encrypted DLL payloads for secure loader delivery
+                </p>
+              </div>
+            </div>
+            <div className="divide-y divide-white/[0.03]">
+              {allProjects.map((project) => (
+                <div key={project.id}
+                  className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-white/[0.015]"
+                >
+                  {/* Project info */}
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/[0.08] text-violet-400/50">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white/60 truncate">{project.name}</p>
+                      <p className="text-[10px] text-white/20 truncate">
+                        Owner: {project.ownerEmail} · {project._count.keys} keys
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* DLL status + actions */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    {project.dllHash ? (
+                      <div className="text-right mr-2 hidden sm:block">
+                        <p className="font-mono text-[9px] text-emerald-400/40">
+                          {project.dllHash.substring(0, 16)}...
+                        </p>
+                        <p className="text-[9px] text-white/20">
+                          {project.dllUploadedAt
+                            ? new Date(project.dllUploadedAt).toLocaleDateString()
+                            : "uploaded"}
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-white/15 mr-2 hidden sm:block">
+                        No DLL
+                      </span>
+                    )}
+
+                    {/* Status indicator */}
+                    <div className={`h-2 w-2 rounded-full shrink-0 ${project.dllHash ? "bg-emerald-400/50" : "bg-white/10"}`} />
+
+                    <button
+                      onClick={() => handleDllUpload(project.id)}
+                      disabled={dllUploading === project.id}
+                      className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition-all disabled:opacity-30 ${
+                        project.dllHash
+                          ? "bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60"
+                          : "bg-violet-500/[0.10] text-violet-300/60 hover:bg-violet-500/[0.18] hover:text-violet-300/80"
+                      }`}
+                    >
+                      {dllUploading === project.id
+                        ? "Uploading..."
+                        : project.dllHash
+                        ? "Replace"
+                        : "Upload DLL"}
+                    </button>
+                    {project.dllHash && (
+                      <button
+                        onClick={() => handleDllDelete(project.id)}
+                        disabled={dllUploading === project.id}
+                        className="rounded-lg bg-red-500/[0.06] px-2.5 py-1.5 text-[11px] font-medium text-red-400/50 transition-all hover:bg-red-500/[0.12] hover:text-red-400/70 disabled:opacity-30"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {/* Feedback messages */}
+              {dllMsg && (
+                <div className="px-6 py-2 border-t border-white/[0.03]">
+                  <p className={`text-[10px] ${dllMsg.ok ? "text-emerald-400/50" : "text-red-400/50"}`}>
+                    {dllMsg.text}
+                  </p>
+                </div>
+              )}
+            </div>
+          </GlassCard>
+        );
+      })()}
+
       {/* Users Table */}
       <GlassCard hover={false} delay={0.25} className="overflow-hidden p-0">
         <div className="border-b border-white/[0.04] px-6 py-4">
