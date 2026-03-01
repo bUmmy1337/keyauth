@@ -1,7 +1,12 @@
 "use client";
 
+// ─────────────────────────────────────────────────────────
+// Cloud Radar — Liquid Glass Monochrome
+// ─────────────────────────────────────────────────────────
+
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 // ─────────────────────────────────────────────────────────
 // Map calibration data (from cs2_webradar_v2)
@@ -25,9 +30,6 @@ const MAP_DATA: Record<string, { x: number; y: number; scale: number }> = {
   de_vertigo:  { x: -3168, y: 1762, scale: 4.0 },
 };
 
-// Radar images hosted on GitHub (cs2_webradar_v2 compatible format)
-const RADAR_IMG_BASE = "https://raw.githubusercontent.com/clauadv/cs2_webradar/main/webapp/public/data";
-
 // ─────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────
@@ -37,7 +39,7 @@ interface RadarPlayer {
   m_team: number;
   m_health: number;
   m_is_dead: boolean;
-  m_is_local: boolean;
+  m_is_local?: boolean;
   m_position: { x: number; y: number };
   m_eye_angle: number;
   m_armor: number;
@@ -76,7 +78,30 @@ function worldToRadar(
 }
 
 // ─────────────────────────────────────────────────────────
-// Main Radar Page Component
+// Animations
+// ─────────────────────────────────────────────────────────
+const ease = [0.22, 1, 0.36, 1] as const;
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 16, filter: "blur(8px)" },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    filter: "blur(0px)",
+    transition: { duration: 0.6, delay: i * 0.08, ease },
+  }),
+};
+
+// ─────────────────────────────────────────────────────────
+// Colors
+// ─────────────────────────────────────────────────────────
+const CT_COLOR = "#5b9bd5";
+const CT_DIM   = "#3a6fa0";
+const T_COLOR  = "#e2b74f";
+const T_DIM    = "#b8912f";
+
+// ─────────────────────────────────────────────────────────
+// Main Radar Page
 // ─────────────────────────────────────────────────────────
 export default function RadarPage() {
   const params = useParams();
@@ -85,7 +110,6 @@ export default function RadarPage() {
   const [frame, setFrame] = useState<RadarFrame | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mapImg, setMapImg] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const lastMapRef = useRef<string>("");
@@ -97,8 +121,9 @@ export default function RadarPage() {
   const [showWeapons, setShowWeapons] = useState(true);
   const [showViewCones, setShowViewCones] = useState(true);
   const [showBomb, setShowBomb] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Connect SSE
+  // SSE Connection
   useEffect(() => {
     if (!sessionId) return;
 
@@ -130,30 +155,26 @@ export default function RadarPage() {
       setError("Connection lost. Reconnecting...");
     };
 
-    return () => {
-      es.close();
-    };
+    return () => es.close();
   }, [sessionId]);
 
-  // Load map image when map changes
+  // Load map image
   useEffect(() => {
     if (!frame?.m_map || frame.m_map === lastMapRef.current) return;
     const mapName = frame.m_map;
     lastMapRef.current = mapName;
 
     if (!MAP_DATA[mapName]) {
-      setMapImg(null);
+      imgRef.current = null;
       return;
     }
 
-    const url = `${RADAR_IMG_BASE}/${mapName}/radar.png`;
-    setMapImg(url);
-
+    // Self-hosted map tiles in /public/data/
+    const url = `/data/${mapName}/radar.png`;
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => {
-      imgRef.current = img;
-    };
+    img.onload = () => { imgRef.current = img; };
+    img.onerror = () => { imgRef.current = null; };
     img.src = url;
   }, [frame?.m_map]);
 
@@ -166,76 +187,76 @@ export default function RadarPage() {
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
     const size = canvas.width;
 
-    // Clear
-    ctx.fillStyle = "#0a0a0f";
+    // Background
+    ctx.fillStyle = "#06060a";
     ctx.fillRect(0, 0, size, size);
 
-    // Draw map
+    // Map image
     if (img && img.complete && img.naturalWidth > 0) {
+      ctx.globalAlpha = 0.85;
       ctx.drawImage(img, 0, 0, size, size);
+      ctx.globalAlpha = 1.0;
     } else {
       // Grid placeholder
-      ctx.strokeStyle = "#1a1a2e";
+      ctx.strokeStyle = "rgba(255,255,255,0.04)";
       ctx.lineWidth = 0.5;
       for (let i = 0; i < size; i += 50) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0); ctx.lineTo(i, size);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(0, i); ctx.lineTo(size, i);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
       }
     }
 
     if (!f || !f.m_map || !MAP_DATA[f.m_map]) {
-      // Draw "waiting" text
-      ctx.fillStyle = "#ffffff80";
-      ctx.font = "16px sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.font = "500 14px Inter, system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("Waiting for game data...", size / 2, size / 2);
+      ctx.fillText("Waiting for game data\u2026", size / 2, size / 2);
       return;
     }
 
     const mapData = MAP_DATA[f.m_map];
 
-    // Draw bomb
-    if (showBomb && f.m_bomb?.active && f.m_bomb.x !== undefined && f.m_bomb.y !== undefined) {
+    // Bomb
+    if (showBomb && f.m_bomb?.active && f.m_bomb.x != null && f.m_bomb.y != null) {
       const bp = worldToRadar(f.m_bomb.x, f.m_bomb.y, mapData, size);
       ctx.save();
-      ctx.fillStyle = "#ff4444";
-      ctx.strokeStyle = "#ff0000";
-      ctx.lineWidth = 2;
+      // Glow
+      const bombGlow = ctx.createRadialGradient(bp.x, bp.y, 0, bp.x, bp.y, dotSize * 3);
+      bombGlow.addColorStop(0, "rgba(255,60,60,0.25)");
+      bombGlow.addColorStop(1, "transparent");
+      ctx.fillStyle = bombGlow;
       ctx.beginPath();
-      ctx.arc(bp.x, bp.y, dotSize * 0.8, 0, Math.PI * 2);
+      ctx.arc(bp.x, bp.y, dotSize * 3, 0, Math.PI * 2);
+      ctx.fill();
+      // Marker
+      ctx.fillStyle = "#ff4444";
+      ctx.strokeStyle = "rgba(255,0,0,0.6)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(bp.x, bp.y, dotSize * 0.7, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = "#ffffff";
-      ctx.font = `bold ${dotSize}px sans-serif`;
+      ctx.fillStyle = "#fff";
+      ctx.font = `bold ${Math.max(8, dotSize * 0.8)}px Inter, system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("C4", bp.x, bp.y);
       ctx.restore();
     }
 
-    // Draw players
+    // Players
     for (const player of f.m_players) {
       if (player.m_is_dead) continue;
 
       const pos = worldToRadar(player.m_position.x, player.m_position.y, mapData, size);
-
-      // Skip if outside canvas
-      if (pos.x < -20 || pos.x > size + 20 || pos.y < -20 || pos.y > size + 20) continue;
+      if (pos.x < -30 || pos.x > size + 30 || pos.y < -30 || pos.y > size + 30) continue;
 
       const isCt = player.m_team === 3;
-      const isLocal = player.m_is_local;
-
-      // Colors
-      const teamColor = isCt ? "#5b9bd5" : "#e2b74f";
-      const teamColorDark = isCt ? "#3a6fa0" : "#b8912f";
-      const localGlow = isLocal ? "#ffffff60" : "transparent";
+      const isLocal = !!player.m_is_local;
+      const teamColor = isCt ? CT_COLOR : T_COLOR;
+      const teamDark = isCt ? CT_DIM : T_DIM;
 
       ctx.save();
 
@@ -243,61 +264,54 @@ export default function RadarPage() {
       if (showViewCones) {
         const yaw = (-player.m_eye_angle + 90) * (Math.PI / 180);
         const coneLen = dotSize * 4;
-        const coneAngle = 0.35; // ~20 degrees half-angle
-
+        const coneAngle = 0.35;
         ctx.beginPath();
         ctx.moveTo(pos.x, pos.y);
-        ctx.lineTo(
-          pos.x + Math.cos(yaw - coneAngle) * coneLen,
-          pos.y - Math.sin(yaw - coneAngle) * coneLen
-        );
-        ctx.lineTo(
-          pos.x + Math.cos(yaw + coneAngle) * coneLen,
-          pos.y - Math.sin(yaw + coneAngle) * coneLen
-        );
+        ctx.lineTo(pos.x + Math.cos(yaw - coneAngle) * coneLen, pos.y - Math.sin(yaw - coneAngle) * coneLen);
+        ctx.lineTo(pos.x + Math.cos(yaw + coneAngle) * coneLen, pos.y - Math.sin(yaw + coneAngle) * coneLen);
         ctx.closePath();
-
-        const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coneLen);
-        gradient.addColorStop(0, isCt ? "#5b9bd540" : "#e2b74f40");
-        gradient.addColorStop(1, "transparent");
-        ctx.fillStyle = gradient;
+        const coneGrad = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coneLen);
+        coneGrad.addColorStop(0, isCt ? "rgba(91,155,213,0.22)" : "rgba(226,183,79,0.22)");
+        coneGrad.addColorStop(1, "transparent");
+        ctx.fillStyle = coneGrad;
         ctx.fill();
       }
 
-      // Local player glow
+      // Local glow
       if (isLocal) {
+        const glow = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, dotSize * 2);
+        glow.addColorStop(0, "rgba(255,255,255,0.15)");
+        glow.addColorStop(1, "transparent");
+        ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, dotSize * 1.5, 0, Math.PI * 2);
-        ctx.fillStyle = localGlow;
+        ctx.arc(pos.x, pos.y, dotSize * 2, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Player dot — teardrop shape
+      // Teardrop dot
       ctx.translate(pos.x, pos.y);
       const yawRad = (-player.m_eye_angle + 90) * (Math.PI / 180);
       ctx.rotate(-yawRad + Math.PI);
+      const r = dotSize / 2;
 
       ctx.beginPath();
-      const r = dotSize / 2;
-      // Teardrop: circle + triangle pointing in direction
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.moveTo(-r * 0.6, 0);
       ctx.lineTo(0, -r * 1.8);
       ctx.lineTo(r * 0.6, 0);
       ctx.closePath();
-
       ctx.fillStyle = teamColor;
       ctx.fill();
-      ctx.strokeStyle = teamColorDark;
+      ctx.strokeStyle = teamDark;
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // Health indicator (outline brightness based on HP)
+      // Health arc
       if (player.m_health < 100) {
         const hpPct = player.m_health / 100;
         ctx.beginPath();
-        ctx.arc(0, 0, r + 2, 0, Math.PI * 2 * hpPct);
-        ctx.strokeStyle = hpPct > 0.5 ? "#60ff60" : hpPct > 0.25 ? "#ffaa00" : "#ff3333";
+        ctx.arc(0, 0, r + 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * hpPct);
+        ctx.strokeStyle = hpPct > 0.5 ? "#34d399" : hpPct > 0.25 ? "#fbbf24" : "#f87171";
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -307,14 +321,14 @@ export default function RadarPage() {
       // Name
       if (showNames) {
         ctx.save();
-        ctx.fillStyle = "#ffffffd0";
-        ctx.strokeStyle = "#000000a0";
-        ctx.lineWidth = 2;
-        ctx.font = `${Math.max(9, dotSize * 0.9)}px sans-serif`;
+        ctx.font = `500 ${Math.max(9, dotSize * 0.85)}px Inter, system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        const nameY = pos.y - dotSize - 2;
+        const nameY = pos.y - dotSize - 3;
+        ctx.strokeStyle = "rgba(0,0,0,0.7)";
+        ctx.lineWidth = 2.5;
         ctx.strokeText(player.m_name, pos.x, nameY);
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
         ctx.fillText(player.m_name, pos.x, nameY);
         ctx.restore();
       }
@@ -322,246 +336,255 @@ export default function RadarPage() {
       // Weapon
       if (showWeapons && player.m_active_weapon) {
         ctx.save();
-        ctx.fillStyle = "#ffffff80";
-        ctx.font = `${Math.max(8, dotSize * 0.7)}px sans-serif`;
+        ctx.font = `400 ${Math.max(8, dotSize * 0.65)}px Inter, system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillText(player.m_active_weapon, pos.x, pos.y + dotSize + 2);
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.fillText(player.m_active_weapon, pos.x, pos.y + dotSize + 3);
         ctx.restore();
       }
     }
 
-    // Draw info overlay
+    // HUD overlay
     ctx.save();
-    ctx.fillStyle = "#00000080";
-    ctx.fillRect(0, 0, size, 30);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "12px sans-serif";
-    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, size, 28);
+    ctx.font = "500 11px Inter, system-ui, sans-serif";
     ctx.textBaseline = "middle";
-    ctx.fillText(`Map: ${f.m_map}`, 8, 15);
+
+    // Map name
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.fillText(f.m_map.toUpperCase(), 10, 14);
+
+    // Team counts
+    const tAlive = f.m_players.filter(p => p.m_team === 2 && !p.m_is_dead).length;
+    const ctAlive = f.m_players.filter(p => p.m_team === 3 && !p.m_is_dead).length;
     ctx.textAlign = "center";
-    const tCount = f.m_players.filter(p => p.m_team === 2 && !p.m_is_dead).length;
-    const ctCount = f.m_players.filter(p => p.m_team === 3 && !p.m_is_dead).length;
-    ctx.fillStyle = "#e2b74f";
-    ctx.fillText(`T: ${tCount}`, size / 2 - 30, 15);
-    ctx.fillStyle = "#5b9bd5";
-    ctx.fillText(`CT: ${ctCount}`, size / 2 + 30, 15);
-    ctx.fillStyle = "#ffffff60";
+    ctx.fillStyle = T_COLOR;
+    ctx.fillText(`T ${tAlive}`, size / 2 - 24, 14);
+    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.fillText(":", size / 2, 14);
+    ctx.fillStyle = CT_COLOR;
+    ctx.fillText(`${ctAlive} CT`, size / 2 + 24, 14);
+
+    // Player count
     ctx.textAlign = "right";
-    ctx.fillText(`Players: ${f.m_players.filter(p => !p.m_is_dead).length}`, size - 8, 15);
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.fillText(`${f.m_players.filter(p => !p.m_is_dead).length} alive`, size - 10, 14);
     ctx.restore();
   }, [dotSize, showNames, showWeapons, showViewCones, showBomb]);
 
   // Animation loop
   useEffect(() => {
-    let animId: number;
-    const loop = () => {
-      render();
-      animId = requestAnimationFrame(loop);
-    };
-    animId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animId);
+    let id: number;
+    const loop = () => { render(); id = requestAnimationFrame(loop); };
+    id = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(id);
   }, [render]);
 
-  // Responsive canvas size
+  // Responsive canvas
   const [canvasSize, setCanvasSize] = useState(600);
   useEffect(() => {
-    const updateSize = () => {
-      const s = Math.min(window.innerWidth - 320, window.innerHeight - 80, 800);
-      setCanvasSize(Math.max(400, s));
+    const update = () => {
+      const sideW = sidebarOpen ? 300 : 0;
+      const s = Math.min(window.innerWidth - sideW - 64, window.innerHeight - 120, 860);
+      setCanvasSize(Math.max(380, s));
     };
-    updateSize();
-    window.addEventListener("resize", updateSize);
-    return () => window.removeEventListener("resize", updateSize);
-  }, []);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [sidebarOpen]);
+
+  const ctPlayers = frame?.m_players.filter(p => p.m_team === 3) ?? [];
+  const tPlayers = frame?.m_players.filter(p => p.m_team === 2) ?? [];
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#08080c",
-      color: "#fff",
-      fontFamily: "'Inter', -apple-system, system-ui, sans-serif",
-      display: "flex",
-      flexDirection: "column",
-    }}>
+    <div className="min-h-screen bg-surface-primary text-text-primary font-sans antialiased relative overflow-hidden">
+      {/* Ambient orbs */}
+      <div className="fixed inset-0 -z-10 pointer-events-none">
+        <div className="absolute w-[500px] h-[500px] -top-48 -right-24 rounded-full opacity-[0.02] bg-white blur-[80px]" />
+        <div className="absolute w-[400px] h-[400px] -bottom-32 -left-20 rounded-full opacity-[0.015] bg-white blur-[80px]" />
+      </div>
+
       {/* Header */}
-      <header style={{
-        padding: "12px 20px",
-        borderBottom: "1px solid #ffffff10",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: "#0a0a12",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{
-            background: "#fff",
-            color: "#000",
-            fontWeight: 700,
-            padding: "4px 10px",
-            borderRadius: 6,
-            fontSize: 14,
-          }}>MOZORITY</span>
-          <span style={{ color: "#888", fontSize: 13 }}>Cloud Radar</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: "50%",
-            background: connected ? "#4caf50" : "#f44336",
-            display: "inline-block",
-          }} />
-          <span style={{ color: "#aaa", fontSize: 12 }}>
-            {connected ? "Connected" : error || "Disconnected"}
+      <motion.header
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease }}
+        className="relative z-20 flex items-center justify-between px-6 py-3 border-b border-border-subtle"
+        style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(40px) saturate(1.4)" }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="bg-white text-black font-bold text-xs px-2.5 py-1 rounded-md tracking-tight">
+            MOZORITY
           </span>
-          <span style={{
-            color: "#666", fontSize: 11,
-            background: "#ffffff08",
-            padding: "2px 8px",
-            borderRadius: 4,
-          }}>
-            ID: {sessionId}
-          </span>
+          <span className="text-text-tertiary text-sm tracking-tight">Cloud Radar</span>
         </div>
-      </header>
+
+        <div className="flex items-center gap-4">
+          {/* Connection status */}
+          <div className="flex items-center gap-2">
+            <span
+              className="w-[7px] h-[7px] rounded-full"
+              style={{ background: connected ? "#34d399" : error ? "#f87171" : "#52525b" }}
+            />
+            <span className="text-text-muted text-xs">
+              {connected ? "Live" : error || "Offline"}
+            </span>
+          </div>
+
+          {/* Session badge */}
+          <div className="glass-sm px-3 py-1 rounded-lg">
+            <span className="text-text-muted text-[11px] font-mono tracking-wide">{sessionId}</span>
+          </div>
+
+          {/* Sidebar toggle */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="glass-button px-3 py-1.5 rounded-xl text-[11px] text-text-secondary hover:text-white transition-colors"
+          >
+            {sidebarOpen ? "Hide Panel" : "Show Panel"}
+          </button>
+        </div>
+      </motion.header>
 
       {/* Main content */}
-      <div style={{
-        flex: 1,
-        display: "flex",
-        gap: 16,
-        padding: 16,
-      }}>
-        {/* Radar canvas */}
-        <div style={{
-          flex: 1,
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "flex-start",
-        }}>
-          <canvas
-            ref={canvasRef}
-            width={canvasSize}
-            height={canvasSize}
-            style={{
-              borderRadius: 8,
-              border: "1px solid #ffffff10",
-              background: "#0a0a0f",
-            }}
-          />
-        </div>
+      <div className="flex h-[calc(100vh-49px)]">
+        {/* Radar area */}
+        <motion.div
+          custom={0}
+          initial="hidden"
+          animate="visible"
+          variants={fadeUp}
+          className="flex-1 flex items-center justify-center p-6"
+        >
+          <div className="glass relative" style={{ borderRadius: 20, padding: 3 }}>
+            <canvas
+              ref={canvasRef}
+              width={canvasSize}
+              height={canvasSize}
+              style={{
+                borderRadius: 17,
+                display: "block",
+                background: "#06060a",
+              }}
+            />
+          </div>
+        </motion.div>
 
         {/* Sidebar */}
-        <div style={{
-          width: 280,
-          background: "#0d0d14",
-          borderRadius: 8,
-          border: "1px solid #ffffff08",
-          padding: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 16,
-          overflowY: "auto",
-          maxHeight: canvasSize,
-        }}>
-          {/* Settings */}
-          <div>
-            <h3 style={{ fontSize: 13, color: "#888", marginBottom: 12, fontWeight: 600 }}>
-              SETTINGS
-            </h3>
-            <SettingSlider label="Dot Size" value={dotSize} min={4} max={24}
-              onChange={setDotSize} />
-            <SettingToggle label="Show Names" checked={showNames}
-              onChange={setShowNames} />
-            <SettingToggle label="Show Weapons" checked={showWeapons}
-              onChange={setShowWeapons} />
-            <SettingToggle label="View Cones" checked={showViewCones}
-              onChange={setShowViewCones} />
-            <SettingToggle label="Show Bomb" checked={showBomb}
-              onChange={setShowBomb} />
-          </div>
+        <AnimatePresence>
+          {sidebarOpen && (
+            <motion.aside
+              initial={{ opacity: 0, x: 20, filter: "blur(8px)" }}
+              animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+              exit={{ opacity: 0, x: 20, filter: "blur(8px)" }}
+              transition={{ duration: 0.4, ease }}
+              className="w-[280px] border-l border-border-subtle flex flex-col overflow-hidden"
+              style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(40px) saturate(1.3)" }}
+            >
+              <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                {/* Settings section */}
+                <motion.div custom={1} initial="hidden" animate="visible" variants={fadeUp}>
+                  <SectionHeader label="SETTINGS" />
+                  <div className="space-y-1.5 mt-3">
+                    <GlassSlider label="Dot Size" value={dotSize} min={4} max={24} onChange={setDotSize} />
+                    <GlassToggle label="Names" checked={showNames} onChange={setShowNames} />
+                    <GlassToggle label="Weapons" checked={showWeapons} onChange={setShowWeapons} />
+                    <GlassToggle label="View Cones" checked={showViewCones} onChange={setShowViewCones} />
+                    <GlassToggle label="Bomb" checked={showBomb} onChange={setShowBomb} />
+                  </div>
+                </motion.div>
 
-          {/* Player list */}
-          <div>
-            <h3 style={{ fontSize: 13, color: "#888", marginBottom: 12, fontWeight: 600 }}>
-              PLAYERS
-            </h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {/* CT players */}
-              {frame?.m_players
-                .filter(p => p.m_team === 3)
-                .sort((a, b) => (a.m_is_dead ? 1 : 0) - (b.m_is_dead ? 1 : 0))
-                .map(p => (
-                  <PlayerCard key={p.m_idx} player={p} />
-                ))}
-              {/* Separator */}
-              {frame?.m_players.some(p => p.m_team === 3) && frame?.m_players.some(p => p.m_team === 2) && (
-                <div style={{ height: 1, background: "#ffffff10", margin: "4px 0" }} />
-              )}
-              {/* T players */}
-              {frame?.m_players
-                .filter(p => p.m_team === 2)
-                .sort((a, b) => (a.m_is_dead ? 1 : 0) - (b.m_is_dead ? 1 : 0))
-                .map(p => (
-                  <PlayerCard key={p.m_idx} player={p} />
-                ))}
-            </div>
-          </div>
-        </div>
+                {/* Players section */}
+                <motion.div custom={2} initial="hidden" animate="visible" variants={fadeUp}>
+                  <SectionHeader label="PLAYERS" />
+                  <div className="mt-3 space-y-0.5">
+                    {/* CT */}
+                    {ctPlayers
+                      .sort((a, b) => (a.m_is_dead ? 1 : 0) - (b.m_is_dead ? 1 : 0))
+                      .map(p => <PlayerRow key={p.m_idx} player={p} />)}
+
+                    {ctPlayers.length > 0 && tPlayers.length > 0 && (
+                      <div className="h-px bg-border-subtle my-2" />
+                    )}
+
+                    {/* T */}
+                    {tPlayers
+                      .sort((a, b) => (a.m_is_dead ? 1 : 0) - (b.m_is_dead ? 1 : 0))
+                      .map(p => <PlayerRow key={p.m_idx} player={p} />)}
+
+                    {!frame && (
+                      <p className="text-text-muted text-xs text-center py-6">No data yet</p>
+                    )}
+                  </div>
+                </motion.div>
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────
-// UI Components
+// Components
 // ─────────────────────────────────────────────────────────
-function PlayerCard({ player }: { player: RadarPlayer }) {
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <h3 className="text-[10px] font-semibold tracking-[0.08em] text-text-muted uppercase">
+      {label}
+    </h3>
+  );
+}
+
+function PlayerRow({ player }: { player: RadarPlayer }) {
   const isCt = player.m_team === 3;
-  const color = isCt ? "#5b9bd5" : "#e2b74f";
+  const color = isCt ? CT_COLOR : T_COLOR;
   const isDead = player.m_is_dead || player.m_health <= 0;
 
   return (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      padding: "6px 8px",
-      borderRadius: 6,
-      background: player.m_is_local ? "#ffffff08" : "transparent",
-      opacity: isDead ? 0.4 : 1,
-    }}>
-      <div style={{
-        width: 8, height: 8,
-        borderRadius: "50%",
-        background: isDead ? "#666" : color,
-        flexShrink: 0,
-      }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 12,
-          color: isDead ? "#666" : "#ddd",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}>
-          {player.m_name}
+    <div
+      className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl transition-colors duration-200"
+      style={{
+        background: player.m_is_local ? "rgba(255,255,255,0.04)" : "transparent",
+        opacity: isDead ? 0.35 : 1,
+      }}
+    >
+      <span
+        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+        style={{ background: isDead ? "#52525b" : color }}
+      />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[12px] text-text-primary truncate leading-tight">
+            {player.m_name}
+          </span>
           {player.m_is_local && (
-            <span style={{ color: "#888", fontSize: 10, marginLeft: 4 }}>(you)</span>
+            <span className="text-[9px] text-text-muted">(you)</span>
           )}
         </div>
         {!isDead && (
-          <div style={{ fontSize: 10, color: "#666", display: "flex", gap: 6 }}>
-            <span style={{
-              color: player.m_health > 50 ? "#6c6" : player.m_health > 25 ? "#fa0" : "#f44",
-            }}>
-              {player.m_health} HP
+          <div className="flex items-center gap-2 mt-0.5">
+            <span
+              className="text-[10px] font-medium tabular-nums"
+              style={{
+                color: player.m_health > 50 ? "#34d399" : player.m_health > 25 ? "#fbbf24" : "#f87171",
+              }}
+            >
+              {player.m_health}
             </span>
             {player.m_armor > 0 && (
-              <span>{player.m_armor} AR{player.m_has_helmet ? "+H" : ""}</span>
+              <span className="text-[10px] text-text-muted tabular-nums">
+                {player.m_armor}{player.m_has_helmet ? "+H" : ""}
+              </span>
             )}
             {player.m_active_weapon && (
-              <span style={{ color: "#888" }}>{player.m_active_weapon}</span>
+              <span className="text-[10px] text-text-tertiary truncate">
+                {player.m_active_weapon}
+              </span>
             )}
           </div>
         )}
@@ -570,68 +593,79 @@ function PlayerCard({ player }: { player: RadarPlayer }) {
   );
 }
 
-function SettingToggle({ label, checked, onChange }: {
-  label: string; checked: boolean; onChange: (v: boolean) => void;
+function GlassToggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
 }) {
   return (
-    <label style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      padding: "6px 0",
-      cursor: "pointer",
-      fontSize: 12,
-      color: "#ccc",
-    }}>
-      {label}
-      <div
+    <label className="flex items-center justify-between py-1.5 cursor-pointer group">
+      <span className="text-[12px] text-text-secondary group-hover:text-text-primary transition-colors">
+        {label}
+      </span>
+      <button
         onClick={() => onChange(!checked)}
+        className="w-8 h-[18px] rounded-full relative transition-all duration-300"
         style={{
-          width: 34, height: 18,
-          borderRadius: 9,
-          background: checked ? "#5b9bd5" : "#333",
-          position: "relative",
-          transition: "background 0.2s",
-          cursor: "pointer",
+          background: checked ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)",
+          border: `1px solid ${checked ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.08)"}`,
         }}
       >
-        <div style={{
-          width: 14, height: 14,
-          borderRadius: "50%",
-          background: "#fff",
-          position: "absolute",
-          top: 2,
-          left: checked ? 18 : 2,
-          transition: "left 0.2s",
-        }} />
-      </div>
+        <span
+          className="absolute top-[2px] w-3 h-3 rounded-full bg-white transition-all duration-300"
+          style={{
+            left: checked ? 14 : 2,
+            opacity: checked ? 1 : 0.5,
+          }}
+        />
+      </button>
     </label>
   );
 }
 
-function SettingSlider({ label, value, min, max, onChange }: {
-  label: string; value: number; min: number; max: number; onChange: (v: number) => void;
+function GlassSlider({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
 }) {
+  const pct = ((value - min) / (max - min)) * 100;
+
   return (
-    <div style={{ padding: "4px 0" }}>
-      <div style={{
-        display: "flex", justifyContent: "space-between",
-        fontSize: 12, color: "#ccc", marginBottom: 4,
-      }}>
-        <span>{label}</span>
-        <span style={{ color: "#888" }}>{value}</span>
+    <div className="py-1.5">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[12px] text-text-secondary">{label}</span>
+        <span className="text-[11px] text-text-muted tabular-nums font-mono">{value}</span>
       </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        style={{
-          width: "100%",
-          accentColor: "#5b9bd5",
-        }}
-      />
+      <div className="relative h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+        <div
+          className="absolute inset-y-0 left-0 rounded-full"
+          style={{ width: `${pct}%`, background: "rgba(255,255,255,0.20)" }}
+        />
+        <input
+          type="range"
+          min={min}
+          max={max}
+          value={value}
+          onChange={e => onChange(Number(e.target.value))}
+          className="absolute inset-0 w-full opacity-0 cursor-pointer"
+        />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-sm pointer-events-none"
+          style={{ left: `calc(${pct}% - 6px)` }}
+        />
+      </div>
     </div>
   );
 }
