@@ -23,6 +23,9 @@ const PUBLIC_PATHS = [
   // Secure loader endpoints (auth is handled internally via key+hwid)
   "/api/loader/handshake",
   "/api/loader/download",
+  // Cloud Radar (public — identified by session ID)
+  "/api/radar/push",
+  "/api/radar/pull",
 ];
 
 const PORTAL_AUTH_PATHS = [
@@ -43,6 +46,10 @@ const API_AUTH_PATHS = [
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+function isRadarPage(pathname: string): boolean {
+  return pathname.startsWith("/radar/");
 }
 
 function isPortalRoute(pathname: string): boolean {
@@ -70,6 +77,11 @@ export async function middleware(request: NextRequest) {
 
   // ─── Skip public routes ─────────────────────────────────
   if (isPublic(pathname)) {
+    return response;
+  }
+
+  // ─── Radar pages (/radar/[sessionId]) — always accessible ──
+  if (isRadarPage(pathname)) {
     return response;
   }
 
