@@ -56,9 +56,7 @@ export async function POST(request: NextRequest) {
 
     try {
       // Decode base64 payload
-      const encBytes = Uint8Array.from(atob(encryptedPayload), (c) =>
-        c.charCodeAt(0)
-      );
+      const encBytes = new Uint8Array(Buffer.from(encryptedPayload, "base64"));
 
       // Import session AES key
       const aesKey = await crypto.subtle.importKey(
@@ -132,12 +130,8 @@ export async function POST(request: NextRequest) {
       }
 
       const [storedIvB64, storedCtB64] = project.dllData.split(":");
-      const storedIv = Uint8Array.from(atob(storedIvB64), (c) =>
-        c.charCodeAt(0)
-      );
-      const storedCt = Uint8Array.from(atob(storedCtB64), (c) =>
-        c.charCodeAt(0)
-      );
+      const storedIv = new Uint8Array(Buffer.from(storedIvB64, "base64"));
+      const storedCt = new Uint8Array(Buffer.from(storedCtB64, "base64"));
 
       const storageKey = await crypto.subtle.importKey(
         "raw",

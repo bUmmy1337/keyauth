@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
         .replace("-----BEGIN PUBLIC KEY-----", "")
         .replace("-----END PUBLIC KEY-----", "")
         .replace(/\s/g, "");
-      const derBytes = Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0));
+      const derBytes = new Uint8Array(Buffer.from(pemBody, "base64"));
 
       const rsaKey = await crypto.subtle.importKey(
         "spki",
@@ -161,9 +161,7 @@ export async function POST(request: NextRequest) {
     });
 
     // ─── Return encrypted AES key + token ─────────────────
-    const encryptedB64 = btoa(
-      String.fromCharCode(...new Uint8Array(encryptedAesPackage))
-    );
+    const encryptedB64 = Buffer.from(new Uint8Array(encryptedAesPackage)).toString("base64");
 
     return new Response(
       JSON.stringify({

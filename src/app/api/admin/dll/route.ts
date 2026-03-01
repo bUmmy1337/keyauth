@@ -57,11 +57,7 @@ export async function POST(request: NextRequest) {
     // Decode base64 to get raw bytes for size check and hash
     let dllBytes: Uint8Array;
     try {
-      const binaryStr = atob(dll);
-      dllBytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        dllBytes[i] = binaryStr.charCodeAt(i);
-      }
+      dllBytes = new Uint8Array(Buffer.from(dll, "base64"));
     } catch {
       return error("Invalid base64 DLL data.", 400);
     }
@@ -103,8 +99,8 @@ export async function POST(request: NextRequest) {
     );
 
     // Store as: iv_base64:ciphertext_base64
-    const ivB64 = btoa(String.fromCharCode(...iv));
-    const ctB64 = btoa(String.fromCharCode(...new Uint8Array(encryptedDll)));
+    const ivB64 = Buffer.from(iv).toString("base64");
+    const ctB64 = Buffer.from(new Uint8Array(encryptedDll)).toString("base64");
     const storedData = `${ivB64}:${ctB64}`;
 
     await prisma.project.update({
