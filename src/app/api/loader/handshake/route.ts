@@ -106,6 +106,12 @@ export async function POST(request: NextRequest) {
       if (matchedKey.hwid !== hwidHash) {
         return error("License key is locked to a different machine.", 403);
       }
+    } else if (!matchedKey.hwidLocked) {
+      // Bind HWID on first use (same as /api/validate)
+      await prisma.key.update({
+        where: { id: matchedKey.id },
+        data: { hwid: hwidHash, hwidLocked: true },
+      });
     }
 
     // ─── Generate AES-256 session key ─────────────────────
@@ -162,6 +168,21 @@ export async function POST(request: NextRequest) {
 
     // ─── Return encrypted AES key + token ─────────────────
     const encryptedB64 = Buffer.from(new Uint8Array(encryptedAesPackage)).toString("base64");
+
+    // Log successful handshake
+    try {
+      await prisma.log.create({
+        data: {
+          action: "loader:handshake",
+          ip,
+          userAgent: request.headers.get("user-agent") || undefined,
+          hwid: hwidHash,
+          success: true,
+        },
+      });
+    } catch {
+      // Non-critical
+    }
 
     return new Response(
       JSON.stringify({
