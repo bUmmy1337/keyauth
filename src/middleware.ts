@@ -66,6 +66,12 @@ function isProtectedApi(pathname: string): boolean {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const host = request.headers.get("host") || "";
+
+  // ─── Domain-based redirect: cab.mozority.pro / → /p/cabinet ──
+  if (host === "cab.mozority.pro" && pathname === "/") {
+    return NextResponse.redirect(new URL("/p/cabinet", request.url));
+  }
 
   // ─── Security headers for all responses ─────────────────
   const response = NextResponse.next();

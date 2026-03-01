@@ -78,6 +78,20 @@ function worldToRadar(
 }
 
 // ─────────────────────────────────────────────────────────
+// Interpolation helpers
+// ─────────────────────────────────────────────────────────
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  let diff = b - a;
+  while (diff > 180) diff -= 360;
+  while (diff < -180) diff += 360;
+  return a + diff * t;
+}
+
+// ─────────────────────────────────────────────────────────
 // Animations
 // ─────────────────────────────────────────────────────────
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -114,6 +128,8 @@ export default function RadarPage() {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const lastMapRef = useRef<string>("");
   const frameRef = useRef<RadarFrame | null>(null);
+  const interpRef = useRef<Map<number, { x: number; y: number; angle: number }>>(new Map());
+  const lastRenderTimeRef = useRef<number>(0);
 
   // Settings
   const [dotSize, setDotSize] = useState(10);
@@ -189,6 +205,13 @@ export default function RadarPage() {
     if (!ctx) return;
     const size = canvas.width;
 
+    // Interpolation timing
+    const now = performance.now();
+    const dt = lastRenderTimeRef.current ? (now - lastRenderTimeRef.current) / 1000 : 0.016;
+    lastRenderTimeRef.current = now;
+    const INTERP_SPEED = 15;
+    const alpha = 1 - Math.exp(-INTERP_SPEED * dt);
+
     // Background
     ctx.fillStyle = "#06060a";
     ctx.fillRect(0, 0, size, size);
@@ -246,11 +269,24 @@ export default function RadarPage() {
       ctx.restore();
     }
 
-    // Players
+    // Players — interpolate positions & angles
+    const activeIds = new Set<number>();
     for (const player of f.m_players) {
       if (player.m_is_dead) continue;
+      activeIds.add(player.m_idx);
 
-      const pos = worldToRadar(player.m_position.x, player.m_position.y, mapData, size);
+      // Interpolate world-space position & eye angle
+      let interp = interpRef.current.get(player.m_idx);
+      if (!interp) {
+        interp = { x: player.m_position.x, y: player.m_position.y, angle: player.m_eye_angle };
+        interpRef.current.set(player.m_idx, interp);
+      } else {
+        interp.x = lerp(interp.x, player.m_position.x, alpha);
+        interp.y = lerp(interp.y, player.m_position.y, alpha);
+        interp.angle = lerpAngle(interp.angle, player.m_eye_angle, alpha);
+      }
+
+      const pos = worldToRadar(interp.x, interp.y, mapData, size);
       if (pos.x < -30 || pos.x > size + 30 || pos.y < -30 || pos.y > size + 30) continue;
 
       const isCt = player.m_team === 3;
@@ -262,7 +298,7 @@ export default function RadarPage() {
 
       // View cone
       if (showViewCones) {
-        const yaw = (-player.m_eye_angle + 90) * (Math.PI / 180);
+        const yaw = interp.angle * (Math.PI / 180);
         const coneLen = dotSize * 4;
         const coneAngle = 0.35;
         ctx.beginPath();
@@ -290,8 +326,7 @@ export default function RadarPage() {
 
       // Teardrop dot
       ctx.translate(pos.x, pos.y);
-      const yawRad = (-player.m_eye_angle + 90) * (Math.PI / 180);
-      ctx.rotate(-yawRad + Math.PI);
+      ctx.rotate(Math.PI / 2 - interp.angle * (Math.PI / 180));
       const r = dotSize / 2;
 
       ctx.beginPath();
@@ -343,6 +378,11 @@ export default function RadarPage() {
         ctx.fillText(player.m_active_weapon, pos.x, pos.y + dotSize + 3);
         ctx.restore();
       }
+    }
+
+    // Prune stale interpolation entries (dead/disconnected players)
+    for (const key of interpRef.current.keys()) {
+      if (!activeIds.has(key)) interpRef.current.delete(key);
     }
 
     // HUD overlay
