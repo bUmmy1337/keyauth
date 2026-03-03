@@ -1,14 +1,16 @@
 // ─────────────────────────────────────────────────────────
 // In-memory presence store — tracks which cheat users are
-// currently in-game, grouped by server IP / map name.
+// currently in-game.  Uses player-list overlap to detect
+// same-server (no server IP needed).
 // Entries expire after 30 seconds of no heartbeat.
 // ─────────────────────────────────────────────────────────
 
 interface PresenceEntry {
-  steamId: string;       // SteamID64
-  mapName: string;       // e.g. "de_dust2"
-  serverAddr: string;    // IP:port of the game server (or "" if unknown)
-  lastSeen: number;      // Date.now()
+  steamId: string;          // SteamID64 of the cheat user
+  mapName: string;          // e.g. "de_dust2"
+  serverAddr: string;       // IP:port (may be "")
+  playerList: Set<string>;  // SteamID64s of ALL players in the game
+  lastSeen: number;         // Date.now()
 }
 
 const store = new Map<string, PresenceEntry>();   // steamId → entry
@@ -27,46 +29,61 @@ setInterval(() => {
 
 /**
  * Update presence for a user (called every ~10s by the cheat).
+ * @param players — array of SteamID64 strings of everyone in the game
  */
 export function updatePresence(
   steamId: string,
   mapName: string,
   serverAddr: string,
+  players: string[] = [],
 ): void {
   store.set(steamId, {
     steamId,
     mapName,
     serverAddr,
+    playerList: new Set(players),
     lastSeen: Date.now(),
   });
 }
 
 /**
- * Get list of other cheat users on the same server.
- * Matches by serverAddr if available, otherwise by mapName.
+ * Get list of other cheat users on the **same** server.
+ *
+ * Matching priority:
+ *  1. serverAddr match (if both sides supply it)
+ *  2. Player-list overlap: user A is a peer of user B when
+ *     A's SteamID is in B's playerList **or** B's SteamID is in A's playerList.
+ *     This guarantees both are on the same server.
  */
 export function getPresencePeers(
   steamId: string,
   mapName: string,
   serverAddr: string,
+  players: string[] = [],
 ): string[] {
   const now = Date.now();
   const peers: string[] = [];
+  const myPlayers = new Set(players);
 
   for (const [id, entry] of store) {
-    // Skip self
-    if (id === steamId) continue;
-    // Skip stale
-    if (now - entry.lastSeen > EXPIRY_MS) continue;
+    if (id === steamId) continue;                     // skip self
+    if (now - entry.lastSeen > EXPIRY_MS) continue;   // skip stale
 
-    // Match by server address (most reliable)
+    // 1) Server address match (best, but often unavailable)
     if (serverAddr && entry.serverAddr && serverAddr === entry.serverAddr) {
       peers.push(id);
       continue;
     }
 
-    // Fallback: match by map name (less reliable but works for matchmaking)
-    if (mapName && entry.mapName === mapName) {
+    // 2) Must be on the same map first
+    if (!mapName || entry.mapName !== mapName) continue;
+
+    // 3) Player-list cross-check: does my list contain the other user,
+    //    or does their list contain me?
+    const theyKnowMe = entry.playerList.has(steamId);
+    const iKnowThem  = myPlayers.has(id);
+
+    if (theyKnowMe || iKnowThem) {
       peers.push(id);
     }
   }

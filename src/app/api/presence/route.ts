@@ -57,12 +57,14 @@ export async function POST(request: NextRequest) {
       serverAddr,
       secret,
       action,
+      players,
     } = body as {
       steamId?: string;
       mapName?: string;
       serverAddr?: string;
       secret?: string;
       action?: string;
+      players?: string[];
     };
 
     // Validate required fields
@@ -87,10 +89,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Update our presence
-    updatePresence(steamId, mapName, serverAddr || "");
+    const playerList = Array.isArray(players) ? players.filter(p => typeof p === "string") : [];
+    updatePresence(steamId, mapName, serverAddr || "", playerList);
 
     // Get peers on the same server/map
-    const peers = getPresencePeers(steamId, mapName, serverAddr || "");
+    const peers = getPresencePeers(steamId, mapName, serverAddr || "", playerList);
 
     return success({
       status: "ok",
