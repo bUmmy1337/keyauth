@@ -54,14 +54,14 @@ export async function POST(request: NextRequest) {
     const {
       steamId,
       mapName,
-      serverAddr,
+      serverFingerprint,
       secret,
       action,
       players,
     } = body as {
       steamId?: string;
       mapName?: string;
-      serverAddr?: string;
+      serverFingerprint?: string;
       secret?: string;
       action?: string;
       players?: string[];
@@ -90,10 +90,11 @@ export async function POST(request: NextRequest) {
 
     // Update our presence
     const playerList = Array.isArray(players) ? players.filter(p => typeof p === "string") : [];
-    updatePresence(steamId, mapName, serverAddr || "", playerList);
+    const fp = typeof serverFingerprint === "string" ? serverFingerprint : "";
+    updatePresence(steamId, mapName, fp, playerList);
 
     // Get peers on the same server/map
-    const peers = getPresencePeers(steamId, mapName, serverAddr || "", playerList);
+    const peers = getPresencePeers(steamId, mapName, fp, playerList);
 
     return success({
       status: "ok",
