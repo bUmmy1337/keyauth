@@ -37,11 +37,36 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
-    const { projectId, dll } = body as { projectId: string; dll: string };
+    const contentType = request.headers.get("content-type") || "";
 
-    if (!projectId || !dll) {
-      return error("projectId and dll (base64) are required.", 400);
+    let projectId: string;
+    let dllBytes: Uint8Array;
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      projectId = String(formData.get("projectId") || "");
+      const file = formData.get("dll");
+
+      if (!projectId || !file || !(file instanceof File)) {
+        return error("projectId and dll file are required.", 400);
+      }
+
+      dllBytes = new Uint8Array(await file.arrayBuffer());
+    } else {
+      const body = await request.json();
+      const { projectId: pid, dll } = body as { projectId: string; dll: string };
+
+      if (!pid || !dll) {
+        return error("projectId and dll (base64) are required.", 400);
+      }
+
+      projectId = pid;
+
+      try {
+        dllBytes = new Uint8Array(Buffer.from(dll, "base64"));
+      } catch {
+        return error("Invalid base64 DLL data.", 400);
+      }
     }
 
     // Validate project belongs to user
@@ -52,14 +77,6 @@ export async function POST(request: NextRequest) {
 
     if (!project) {
       return error("Project not found.", 404);
-    }
-
-    // Decode base64 to get raw bytes for size check and hash
-    let dllBytes: Uint8Array;
-    try {
-      dllBytes = new Uint8Array(Buffer.from(dll, "base64"));
-    } catch {
-      return error("Invalid base64 DLL data.", 400);
     }
 
     if (dllBytes.length > MAX_DLL_SIZE) {

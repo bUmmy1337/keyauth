@@ -89,20 +89,24 @@ export default function AdminPage() {
       setDllMsg(null);
 
       try {
-        const buffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        let binary = "";
-        for (let i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        const base64 = btoa(binary);
+        const formData = new FormData();
+        formData.append("projectId", projectId);
+        formData.append("dll", file);
 
         const res = await fetch("/api/admin/dll", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ projectId, dll: base64 }),
+          body: formData,
         });
+
+        if (res.status === 413) {
+          setDllMsg({
+            id: projectId,
+            text: "File too large for server upload limit. If self-hosted, set nginx client_max_body_size to at least 70m and restart.",
+            ok: false,
+          });
+          return;
+        }
 
         const json = await res.json();
         if (json.success) {
@@ -111,7 +115,7 @@ export default function AdminPage() {
         } else {
           setDllMsg({ id: projectId, text: json.error || "Upload failed.", ok: false });
         }
-      } catch (err) {
+      } catch {
         setDllMsg({ id: projectId, text: "Network error during upload.", ok: false });
       } finally {
         setDllUploading(null);

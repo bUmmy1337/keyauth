@@ -6,8 +6,10 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["bcryptjs"],
   experimental: {
     serverActions: {
-      bodySizeLimit: "1mb",
+      bodySizeLimit: "70mb",
     },
+    // Middleware buffers request bodies; must fit largest DLL upload (50 MB)
+    proxyClientMaxBodySize: "70mb",
   },
 };
 
