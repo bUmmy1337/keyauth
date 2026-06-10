@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 // Define the CSP policy directives
 const cspHeader = `
   default-src 'self';
-  connect-src 'self' https://vercel.com https://*.public.blob.vercel-storage.com;
+  connect-src 'self' https://vercel.com https://*.private.blob.vercel-storage.com https://*.public.blob.vercel-storage.com;
   script-src 'self' 'unsafe-inline' 'unsafe-eval';
   style-src 'self' 'unsafe-inline';
   img-src 'self' blob: data:;
