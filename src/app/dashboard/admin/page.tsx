@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────
 
 import { useEffect, useState, useCallback } from "react";
+import { upload } from "@vercel/blob/client";
 import { motion } from "framer-motion";
 import { GlassCard, StatCard } from "@/components/ui";
 import { GlassBadge } from "@/components/ui/glass-badge";
@@ -89,24 +90,20 @@ export default function AdminPage() {
       setDllMsg(null);
 
       try {
-        const formData = new FormData();
-        formData.append("projectId", projectId);
-        formData.append("dll", file);
+        const uploaded = await upload(`dll-uploads/${projectId}/${file.name}`, file, {
+          access: "private",
+          handleUploadUrl: "/api/admin/dll/blob",
+          clientPayload: JSON.stringify({ projectId }),
+          contentType: "application/octet-stream",
+          multipart: file.size > 5 * 1024 * 1024,
+        });
 
         const res = await fetch("/api/admin/dll", {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: formData,
+          body: JSON.stringify({ projectId, blobUrl: uploaded.url }),
         });
-
-        if (res.status === 413) {
-          setDllMsg({
-            id: projectId,
-            text: "File too large for server upload limit. If self-hosted, set nginx client_max_body_size to at least 70m and restart.",
-            ok: false,
-          });
-          return;
-        }
 
         const json = await res.json();
         if (json.success) {

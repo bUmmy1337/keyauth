@@ -111,43 +111,24 @@ export async function POST(request: NextRequest) {
       return error("HWID mismatch.", 403);
     }
 
-    // ─── Load and decrypt stored DLL ──────────────────────
+    // ─── Load and decrypt stored DLL (Blob or legacy DB) ──
     const project = await prisma.project.findUnique({
       where: { id: tokenData.projectId },
-      select: { dllData: true, dllHash: true },
+      select: { dllBlobUrl: true, dllData: true, dllHash: true },
     });
 
-    if (!project?.dllData) {
+    if (!project?.dllBlobUrl && !project?.dllData) {
       return error("No payload available.", 404);
     }
 
-    // Decrypt DLL from storage (AES-256-GCM with server ENCRYPTION_KEY)
     let rawDllBytes: Uint8Array;
     try {
-      const encKey = process.env.ENCRYPTION_KEY;
-      if (!encKey || encKey.length < 32) {
-        return error("Server configuration error.", 500);
+      const { loadProjectDll } = await import("@/lib/dll-storage");
+      const dll = await loadProjectDll(project);
+      if (!dll) {
+        return error("No payload available.", 404);
       }
-
-      const [storedIvB64, storedCtB64] = project.dllData.split(":");
-      const storedIv = new Uint8Array(Buffer.from(storedIvB64, "base64"));
-      const storedCt = new Uint8Array(Buffer.from(storedCtB64, "base64"));
-
-      const storageKey = await crypto.subtle.importKey(
-        "raw",
-        new TextEncoder().encode(encKey).slice(0, 32),
-        { name: "AES-GCM" },
-        false,
-        ["decrypt"]
-      );
-
-      const decryptedDll = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: storedIv, tagLength: 128 },
-        storageKey,
-        storedCt
-      );
-
-      rawDllBytes = new Uint8Array(decryptedDll);
+      rawDllBytes = dll;
     } catch (err) {
       console.error("DLL decryption error:", err);
       return error("Failed to retrieve payload.", 500);

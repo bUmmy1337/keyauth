@@ -1,142 +1,102 @@
 // ─────────────────────────────────────────────────────────
-// POST /api/admin/dll — Upload encrypted DLL payload
+// POST /api/admin/dll — Finalize DLL upload from Vercel Blob
 // DELETE /api/admin/dll — Remove DLL payload from project
 // Admin-only endpoint
 // ─────────────────────────────────────────────────────────
 
 import { NextRequest } from "next/server";
+import { del, get, put } from "@vercel/blob";
 import { prisma } from "@/lib/db";
-import { verifyToken } from "@/lib/auth";
+import { requireAdmin } from "@/lib/admin-auth";
 import { success, error } from "@/lib/api-response";
+import {
+  encryptDllBytes,
+  isAllowedBlobUrl,
+  streamToUint8Array,
+  validateDllBytes,
+} from "@/lib/dll-storage";
 
 export const runtime = "nodejs";
 
-// Max DLL size: 50 MB (base64 encoded will be ~67 MB)
-const MAX_DLL_SIZE = 50 * 1024 * 1024;
-
 /**
- * POST — Upload DLL binary for a project
- * Body: { projectId: string, dll: string (base64) }
+ * POST — Finalize client upload: encrypt DLL and store in private Blob
+ * Body: { projectId: string, blobUrl: string }
  */
 export async function POST(request: NextRequest) {
-  const token =
-    request.cookies.get("auth_token")?.value ||
-    request.headers.get("authorization")?.replace("Bearer ", "");
-
-  if (!token) return error("Unauthorized.", 401);
-
-  let user;
-  try {
-    user = await verifyToken(token);
-  } catch {
-    return error("Invalid token.", 401);
-  }
-
-  if (user.role !== "ADMIN") {
-    return error("Admin access required.", 403);
-  }
+  const user = await requireAdmin(request);
+  if (!user) return error("Admin access required.", 403);
 
   try {
-    const contentType = request.headers.get("content-type") || "";
+    const body = await request.json();
+    const { projectId, blobUrl } = body as { projectId: string; blobUrl: string };
 
-    let projectId: string;
-    let dllBytes: Uint8Array;
-
-    if (contentType.includes("multipart/form-data")) {
-      const formData = await request.formData();
-      projectId = String(formData.get("projectId") || "");
-      const file = formData.get("dll");
-
-      if (!projectId || !file || !(file instanceof File)) {
-        return error("projectId and dll file are required.", 400);
-      }
-
-      dllBytes = new Uint8Array(await file.arrayBuffer());
-    } else {
-      const body = await request.json();
-      const { projectId: pid, dll } = body as { projectId: string; dll: string };
-
-      if (!pid || !dll) {
-        return error("projectId and dll (base64) are required.", 400);
-      }
-
-      projectId = pid;
-
-      try {
-        dllBytes = new Uint8Array(Buffer.from(dll, "base64"));
-      } catch {
-        return error("Invalid base64 DLL data.", 400);
-      }
+    if (!projectId || !blobUrl) {
+      return error("projectId and blobUrl are required.", 400);
     }
 
-    // Validate project belongs to user
+    if (!isAllowedBlobUrl(blobUrl)) {
+      return error("Invalid blob URL.", 400);
+    }
+
     const project = await prisma.project.findFirst({
       where: { id: projectId, ownerId: user.sub },
-      select: { id: true },
+      select: { id: true, dllBlobUrl: true },
     });
 
     if (!project) {
       return error("Project not found.", 404);
     }
 
-    if (dllBytes.length > MAX_DLL_SIZE) {
-      return error(`DLL exceeds maximum size of ${MAX_DLL_SIZE / 1024 / 1024} MB.`, 400);
+    const uploadResult = await get(blobUrl, { access: "private", useCache: false });
+    if (!uploadResult || uploadResult.statusCode !== 200 || !uploadResult.stream) {
+      return error("Uploaded file not found.", 404);
     }
 
-    // Validate PE signature (MZ header)
-    if (dllBytes.length < 64 || dllBytes[0] !== 0x4D || dllBytes[1] !== 0x5A) {
-      return error("Invalid DLL: missing MZ signature.", 400);
+    const expectedPrefix = `dll-uploads/${projectId}/`;
+    if (!uploadResult.blob.pathname.startsWith(expectedPrefix)) {
+      return error("Upload does not belong to this project.", 403);
     }
 
-    // Compute SHA-256 hash of the raw DLL
-    const hashBuffer = await crypto.subtle.digest("SHA-256", dllBytes as BufferSource);
-    const dllHash = Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
-    // Encrypt DLL at rest using AES-256-GCM (server ENCRYPTION_KEY)
-    const encKey = process.env.ENCRYPTION_KEY;
-    if (!encKey || encKey.length < 32) {
-      return error("Server encryption key not configured.", 500);
+    const dllBytes = await streamToUint8Array(uploadResult.stream);
+    const validationError = validateDllBytes(dllBytes);
+    if (validationError) {
+      await del(blobUrl).catch(() => {});
+      return error(validationError, 400);
     }
 
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const keyMaterial = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(encKey).slice(0, 32),
-      { name: "AES-GCM" },
-      false,
-      ["encrypt"]
-    );
+    const { stored, hash } = await encryptDllBytes(dllBytes);
 
-    const encryptedDll = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv: iv as BufferSource, tagLength: 128 },
-      keyMaterial,
-      dllBytes as BufferSource
-    );
+    const encryptedBlob = await put(`dll/${projectId}/payload.enc`, Buffer.from(stored), {
+      access: "private",
+      contentType: "application/octet-stream",
+      addRandomSuffix: false,
+    });
 
-    // Store as: iv_base64:ciphertext_base64
-    const ivB64 = Buffer.from(iv).toString("base64");
-    const ctB64 = Buffer.from(new Uint8Array(encryptedDll)).toString("base64");
-    const storedData = `${ivB64}:${ctB64}`;
+    const blobsToDelete = [blobUrl];
+    if (project.dllBlobUrl && project.dllBlobUrl !== encryptedBlob.url) {
+      blobsToDelete.push(project.dllBlobUrl);
+    }
+
+    await Promise.all(blobsToDelete.map((url) => del(url).catch(() => {})));
 
     await prisma.project.update({
       where: { id: projectId },
       data: {
-        dllData: storedData,
-        dllHash,
+        dllBlobUrl: encryptedBlob.url,
+        dllData: null,
+        dllHash: hash,
         dllUploadedAt: new Date(),
       },
     });
 
     return success({
       message: "DLL uploaded successfully.",
-      hash: dllHash,
+      hash,
       size: dllBytes.length,
       uploadedAt: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("DLL upload error:", err);
+    console.error("DLL finalize error:", err);
     return error("Failed to upload DLL.", 500);
   }
 }
@@ -146,22 +106,8 @@ export async function POST(request: NextRequest) {
  * Body: { projectId: string }
  */
 export async function DELETE(request: NextRequest) {
-  const token =
-    request.cookies.get("auth_token")?.value ||
-    request.headers.get("authorization")?.replace("Bearer ", "");
-
-  if (!token) return error("Unauthorized.", 401);
-
-  let user;
-  try {
-    user = await verifyToken(token);
-  } catch {
-    return error("Invalid token.", 401);
-  }
-
-  if (user.role !== "ADMIN") {
-    return error("Admin access required.", 403);
-  }
+  const user = await requireAdmin(request);
+  if (!user) return error("Admin access required.", 403);
 
   try {
     const body = await request.json();
@@ -173,16 +119,21 @@ export async function DELETE(request: NextRequest) {
 
     const project = await prisma.project.findFirst({
       where: { id: projectId, ownerId: user.sub },
-      select: { id: true },
+      select: { id: true, dllBlobUrl: true },
     });
 
     if (!project) {
       return error("Project not found.", 404);
     }
 
+    if (project.dllBlobUrl) {
+      await del(project.dllBlobUrl).catch(() => {});
+    }
+
     await prisma.project.update({
       where: { id: projectId },
       data: {
+        dllBlobUrl: null,
         dllData: null,
         dllHash: null,
         dllUploadedAt: null,

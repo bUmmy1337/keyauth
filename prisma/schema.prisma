@@ -59,9 +59,10 @@ model Project {
   // Branding
   logoData     String?  // Base64-encoded PNG logo (data URI)
 
-  // Secure DLL payload — stored as base64-encoded encrypted blob
-  dllData      String?  // AES-256-GCM encrypted DLL binary (base64)
-  dllHash      String?  // SHA-256 hash of original DLL for integrity check
+  // Secure DLL payload — encrypted at rest in Vercel Blob (private)
+  dllBlobUrl    String?  // Private Blob URL for AES-256-GCM encrypted DLL
+  dllData       String?  // Legacy: AES-256-GCM encrypted DLL in DB (base64)
+  dllHash       String?  // SHA-256 hash of original DLL for integrity check
   dllUploadedAt DateTime? // When the DLL was last uploaded
 
   @@index([ownerId])
