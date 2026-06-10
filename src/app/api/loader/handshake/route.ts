@@ -55,14 +55,14 @@ export async function POST(request: NextRequest) {
     // ─── Resolve project ──────────────────────────────────
     const project = await prisma.project.findUnique({
       where: { secret: projectSecret },
-      select: { id: true, dllData: true, dllHash: true },
+      select: { id: true, dllBlobUrl: true, dllData: true, dllHash: true },
     });
 
     if (!project) {
       return error("Invalid project.", 401);
     }
 
-    if (!project.dllData) {
+    if (!project.dllBlobUrl && !project.dllData) {
       return error("No payload available for this project.", 404);
     }
 
